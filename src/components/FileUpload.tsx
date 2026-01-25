@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Upload, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { Upload, Loader2 } from 'lucide-react';
 import { getPresignedUrl, triggerProcessing } from '@/actions/storage';
 import toast from 'react-hot-toast';
 

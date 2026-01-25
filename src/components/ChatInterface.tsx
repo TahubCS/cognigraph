@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Send, Bot, User } from 'lucide-react';
+import { Send, Bot } from 'lucide-react';
 import { askAI } from '@/actions/chat';
 
 type Message = {
-  role: 'user' | 'ai';
-  content: string;
+    role: 'user' | 'ai';
+    content: string;
 };
 
 export default function ChatInterface() {
