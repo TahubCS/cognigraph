@@ -6,15 +6,21 @@ import { SignedIn, SignedOut, SignInButton } from '@clerk/nextjs';
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-gray-50 flex flex-col items-center py-12 px-4">
-      <Toaster position="bottom-right" />
+    <main className="min-h-screen bg-gray-950 flex flex-col items-center py-12 px-4">
+      <Toaster position="bottom-right" toastOptions={{
+        style: {
+          background: '#1f2937',
+          color: '#f3f4f6',
+          border: '1px solid #374151',
+        },
+      }} />
 
       {/* Show this when NOT logged in */}
       <SignedOut>
         <div className="max-w-md w-full text-center space-y-6 mt-20">
           <div className="space-y-2">
-            <h1 className="text-4xl font-bold tracking-tight text-gray-900">Welcome to CogniGraph</h1>
-            <p className="text-lg text-gray-600">
+            <h1 className="text-4xl font-bold tracking-tight text-white">Welcome to CogniGraph</h1>
+            <p className="text-lg text-gray-400">
               Sign in to upload documents and chat with AI
             </p>
           </div>
@@ -30,8 +36,8 @@ export default function Home() {
       <SignedIn>
         <div className="max-w-4xl w-full space-y-8">
           <div className="text-center space-y-2">
-            <h1 className="text-4xl font-bold tracking-tight text-gray-900">CogniGraph</h1>
-            <p className="text-lg text-gray-600">
+            <h1 className="text-4xl font-bold tracking-tight text-white">CogniGraph</h1>
+            <p className="text-lg text-gray-400">
               Upload your documents to generate an AI Knowledge Graph.
             </p>
           </div>

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider, SignInButton, SignedIn, SignedOut, UserButton } from '@clerk/nextjs';
+import { dark } from '@clerk/themes';
 // @ts-expect-error: allow CSS side-effect import without declaration
 import "./globals.css";
 
@@ -25,16 +26,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider appearance={{ baseTheme: dark }}>
       <html lang="en" suppressHydrationWarning={true}>
         <body
-          className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+          className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-950`}
           suppressHydrationWarning={true}
         >
-          {/* Auth Header */}
-          <header className="border-b border-gray-200 bg-white">
+          {/* Dark Header */}
+          <header className="border-b border-gray-800 bg-gray-900">
             <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
-              <h1 className="text-xl font-bold text-gray-900">CogniGraph</h1>
+              <h1 className="text-xl font-bold text-white">CogniGraph</h1>
               <div>
                 <SignedOut>
                   <SignInButton mode="modal">
