@@ -1,8 +1,16 @@
 'use server';
 
 import { Client } from 'pg';
+import { auth } from '@clerk/nextjs/server';
 
 export async function getGraphData() {
+    // Get authenticated user
+    const { userId } = await auth();
+    
+    if (!userId) {
+        return { nodes: [], links: [] };
+    }
+
     const client = new Client({
         connectionString: process.env.DATABASE_URL,
     });
@@ -10,28 +18,32 @@ export async function getGraphData() {
     try {
         await client.connect();
 
-        // 1. Fetch All Nodes
+        // 1. Fetch Nodes - ONLY for this user's documents
         const nodesResult = await client.query(`
-        SELECT id, label, type 
-        FROM nodes
-        `);
+            SELECT DISTINCT n.id, n.label, n.type 
+            FROM nodes n
+            JOIN documents d ON n.document_id = d.id
+            WHERE d.user_id = $1
+        `, [userId]);
 
-        // 2. Fetch All Edges
-        // We rename columns to 'source' and 'target' because the library expects those specific names
+        // 2. Fetch Edges - ONLY for this user's documents
         const edgesResult = await client.query(`
-        SELECT source_node_id as source, target_node_id as target, relationship as label 
-        FROM edges
-        `);
+            SELECT DISTINCT e.source_node_id as source, e.target_node_id as target, e.relationship as label 
+            FROM edges e
+            JOIN documents d ON e.document_id = d.id
+            WHERE d.user_id = $1
+        `, [userId]);
 
-        // 3. Return formatted JSON
+        console.log(`📊 Graph for user ${userId}: ${nodesResult.rows.length} nodes, ${edgesResult.rows.length} edges`);
+
         return {
-        nodes: nodesResult.rows.map(n => ({
-            id: n.id,
-            name: n.label,
-            group: n.type, // We can color-code by type (Person, Skill, etc.)
-            val: 5         // Size of the node
-        })),
-        links: edgesResult.rows
+            nodes: nodesResult.rows.map(n => ({
+                id: n.id,
+                name: n.label,
+                group: n.type,
+                val: 5
+            })),
+            links: edgesResult.rows
         };
 
     } catch (error) {

@@ -2,12 +2,20 @@
 
 import { OpenAI } from 'openai';
 import { Client } from 'pg';
+import { auth } from '@clerk/nextjs/server';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
 export async function searchContext(query: string) {
+    // Get authenticated user
+    const { userId } = await auth();
+    
+    if (!userId) {
+        return "";
+    }
+
     const client = new Client({
         connectionString: process.env.DATABASE_URL,
     });
@@ -17,27 +25,26 @@ export async function searchContext(query: string) {
 
         // 1. Generate Query Vector
         const embeddingResponse = await openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: query,
+            model: 'text-embedding-3-small',
+            input: query,
         });
         const vector = JSON.stringify(embeddingResponse.data[0].embedding);
 
-        // 2. Search Database
-        // We selected 'content' (CRITICAL FIX) and use 0.35 threshold based on your 0.48 score
-        // ... inside searchContext ...
+        // 2. Search Database - ONLY for this user's documents
         const result = await client.query(`
             SELECT 
-                content, 
-                1 - (embedding <=> $1) as similarity
-            FROM embeddings
-            WHERE 1 - (embedding <=> $1) > 0.01  -- <--- THE FIX: Set to 0.01
-            ORDER BY embedding <=> $1
+                e.content, 
+                1 - (e.embedding <=> $1) as similarity
+            FROM embeddings e
+            JOIN documents d ON e.document_id = d.id
+            WHERE d.user_id = $2 
+            AND 1 - (e.embedding <=> $1) > 0.01
+            ORDER BY e.embedding <=> $1
             LIMIT 5;
-        `, [vector]);
+        `, [vector, userId]);
 
-        console.log(`🔍 Found ${result.rows.length} relevant chunks for query: "${query}"`);
+        console.log(`🔍 Found ${result.rows.length} relevant chunks for user ${userId}`);
 
-        // 3. Return the text chunks
         return result.rows.map(row => row.content).join('\n\n');
 
     } catch (error) {
@@ -49,16 +56,13 @@ export async function searchContext(query: string) {
 }
 
 export async function askAI(userQuestion: string) {
-    // 1. Get the Context
     const context = await searchContext(userQuestion);
 
-    // If context is empty, give a clear fallback
     if (!context) {
-        console.log("⚠️ No context found. Threshold 0.25 might be too high or doc is empty.");
+        console.log("⚠️ No context found for this user.");
         return "I couldn't find any relevant information in your uploaded documents.";
     }
 
-    // 2. Send Context + Question to GPT-4
     const response = await openai.chat.completions.create({
         model: "gpt-4-turbo",
         messages: [

@@ -33,7 +33,6 @@ export default function GraphVisualization() {
                     graphData={data}
                     nodeLabel="name"
                     nodeColor={node => {
-                        // @ts-expect-error: dynamic types
                         switch(node.group) {
                             case 'Person': return '#3b82f6';
                             case 'Skill': return '#10b981';
@@ -49,7 +48,6 @@ export default function GraphVisualization() {
                     height={500}
                     onNodeClick={node => {
                         // Broadcast the click event
-                        // @ts-expect-error: dynamic types
                         const event = new CustomEvent('graph-node-click', { detail: node.name });
                         window.dispatchEvent(event);
                         
