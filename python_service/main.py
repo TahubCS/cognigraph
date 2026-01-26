@@ -1,12 +1,12 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from pydantic import BaseModel
-import psycopg
-from psycopg.rows import dict_row
+from fastapi import FastAPI, HTTPException, BackgroundTasks # type: ignore
+from pydantic import BaseModel # type: ignore
+import psycopg # type: ignore
+from psycopg.rows import dict_row # type: ignore
 import os
-import boto3
-from dotenv import load_dotenv
-from openai import OpenAI
-import pypdf
+import boto3 # type: ignore
+from dotenv import load_dotenv # type: ignore
+from openai import OpenAI # type: ignore
+import pypdf # type: ignore
 import io
 
 # Load environment variables
@@ -222,5 +222,5 @@ def health_check():
     return {"status": "ready"}
 
 if __name__ == "__main__":
-    import uvicorn
+    import uvicorn # type: ignore
     uvicorn.run(app, host="0.0.0.0", port=8000)

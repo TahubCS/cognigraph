@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { getGraphData } from '@/actions/graph';
 import { Loader2, RefreshCw, Filter } from 'lucide-react';
@@ -25,7 +25,7 @@ export default function GraphVisualization() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const graphRef = useRef<any>(null);
 
-    const loadGraph = async () => {
+    const loadGraph = useCallback(async () => {
         setIsLoading(true);
         setError(null);
         
@@ -43,11 +43,11 @@ export default function GraphVisualization() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [documentFilter, typeFilter]);
 
     useEffect(() => {
         loadGraph();
-    }, [documentFilter, typeFilter]);
+    }, [loadGraph]);
 
     useEffect(() => {
         const handleFileUploaded = () => {
@@ -62,7 +62,7 @@ export default function GraphVisualization() {
         return () => {
             window.removeEventListener('file-uploaded', handleFileUploaded);
         };
-    }, []);
+    }, [loadGraph]);
 
     return (
         <div className="w-full space-y-4">

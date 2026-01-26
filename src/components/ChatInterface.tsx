@@ -1,14 +1,13 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Bot, AlertCircle, Loader2 } from 'lucide-react';
+import { Send, Bot, AlertCircle, Loader2, FileText, Trash2 } from 'lucide-react';
 
 type Message = {
     role: 'user' | 'assistant';
     content: string;
     id: string;
     sources?: Array<{
-        id: number;
         filename: string;
         similarity: string;
         preview: string;
@@ -81,21 +80,17 @@ export default function ChatInterface() {
                 throw new Error(errorData.error || `Request failed with status ${response.status}`);
             }
 
+            if (!response.body) throw new Error('No response body');
+
             // Handle streaming response
-            const reader = response.body?.getReader();
+            const reader = response.body.getReader();
             const decoder = new TextDecoder();
             
-            if (!reader) {
-                throw new Error('No response body');
-            }
-
             let assistantMessage = '';
             let buffer = '';
-            let sources: Message['sources'] = [];
 
             while (true) {
                 const { done, value } = await reader.read();
-                
                 if (done) break;
                 
                 const chunk = decoder.decode(value, { stream: true });
@@ -103,112 +98,55 @@ export default function ChatInterface() {
                 
                 // Check if we've received the sources marker
                 if (buffer.includes('__SOURCES__:')) {
-                    const [textPart, sourcesPart] = buffer.split('__SOURCES__:');
-                    assistantMessage = textPart.trim();
+                    const parts = buffer.split('__SOURCES__:');
+                    const textPart = parts[0];
+                    const sourcesPart = parts[1];
                     
+                    assistantMessage += textPart;
+
                     // Parse sources
                     try {
-                        sources = JSON.parse(sourcesPart);
-                    } catch (e) {
-                        console.error('Failed to parse sources:', e);
-                    }
-                    
-                    // Update final message with sources
-                    setMessages(prev => 
-                        prev.map(m => 
-                            m.id === messageId 
-                                ? { ...m, content: assistantMessage, sources }
-                                : m
-                        )
-                    );
-                    break;
-                }
-                
-                // Split by newlines but keep processing incomplete lines
-                const lines = buffer.split('\n');
-                
-                // If buffer doesn't end with newline, keep last line for next iteration
-                if (!buffer.endsWith('\n')) {
-                    buffer = lines.pop() || '';
-                } else {
-                    buffer = '';
-                }
-                
-                for (const line of lines) {
-                    if (!line.trim() || line.includes('__SOURCES__')) continue;
-                    
-                    let textChunk = '';
-                    
-                    // Try parsing different formats
-                    if (line.startsWith('0:')) {
-                        // Vercel AI SDK format: 0:"text"
-                        const match = line.match(/0:"(.*)"/);
-                        if (match) {
-                            textChunk = match[1]
-                                .replace(/\\n/g, '\n')
-                                .replace(/\\"/g, '"')
-                                .replace(/\\\\/g, '\\');
-                        }
-                    } else if (line.startsWith('data: ')) {
-                        // SSE format
-                        const data = line.substring(6).trim();
-                        if (data === '[DONE]') break;
-                        try {
-                            const parsed = JSON.parse(data);
-                            textChunk = parsed.content || parsed.text || parsed.delta || '';
-                        } catch {
-                            textChunk = data;
-                        }
-                    } else {
-                        // Try parsing as JSON first
-                        try {
-                            const parsed = JSON.parse(line);
-                            textChunk = parsed.content || parsed.text || parsed.delta || '';
-                        } catch {
-                            // Plain text line
-                            textChunk = line + '\n';
-                        }
-                    }
-                    
-                    if (textChunk) {
-                        assistantMessage += textChunk;
-                        
-                        // Update UI immediately for each chunk
+                        const sources = JSON.parse(sourcesPart);
+                        // Update final message with sources
                         setMessages(prev => 
                             prev.map(m => 
                                 m.id === messageId 
-                                    ? { ...m, content: assistantMessage }
+                                    ? { ...m, content: assistantMessage, sources }
                                     : m
                             )
                         );
+                    } catch (e) {
+                        console.error('Failed to parse sources:', e);
+                        // Even if sources fail, show the text we got
+                        setMessages(prev => 
+                             prev.map(m => m.id === messageId ? { ...m, content: assistantMessage } : m)
+                        );
                     }
+                    break;
                 }
-            }
-            
-            // Process any remaining buffer (excluding sources marker)
-            if (buffer.trim() && !buffer.includes('__SOURCES__')) {
-                assistantMessage += buffer + '\n';
+                
+                // If no marker yet, just update text.
+                // Since our custom stream sends raw text chunks (not 0:"..."), we append directly.
+                assistantMessage += chunk;
+                
                 setMessages(prev => 
                     prev.map(m => 
                         m.id === messageId 
-                            ? { ...m, content: assistantMessage, sources }
+                            ? { ...m, content: assistantMessage }
                             : m
                     )
                 );
             }
             
-            // If no message was added, show error
-            if (!assistantMessage) {
-                throw new Error('No response received from AI');
-            }
-
         } catch (error) {
             console.error("Chat error:", error);
             const errorMsg = error instanceof Error ? error.message : "Failed to get AI response. Please try again.";
             setErrorMessage(errorMsg);
             
-            // Remove the empty assistant message
-            setMessages(prev => prev.filter(m => m.id !== messageId));
+            // Remove the empty assistant message if it stayed empty
+            setMessages(prev => prev.map(m => 
+                m.id === messageId && !m.content ? { ...m, content: "Error generating response." } : m
+            ));
         } finally {
             setIsLoading(false);
         }
@@ -226,13 +164,14 @@ export default function ChatInterface() {
     }, []);
 
     useEffect(() => {
-        const handleGraphClickEvent = (e: CustomEvent) => {
-            const nodeName = e.detail;
+        const handleGraphClickEvent = (e: Event) => {
+            const customEvent = e as CustomEvent;
+            const nodeName = customEvent.detail;
             handleGraphClick(nodeName);
         };
 
-        window.addEventListener('graph-node-click', handleGraphClickEvent as EventListener);
-        return () => window.removeEventListener('graph-node-click', handleGraphClickEvent as EventListener);
+        window.addEventListener('graph-node-click', handleGraphClickEvent);
+        return () => window.removeEventListener('graph-node-click', handleGraphClickEvent);
     }, [handleGraphClick]);
 
     const clearChat = () => {
@@ -242,25 +181,28 @@ export default function ChatInterface() {
 
     return (
         <div className="w-full max-w-2xl mx-auto mt-8 bg-gray-900 rounded-xl shadow-xl border border-gray-800 overflow-hidden flex flex-col h-150">
+            {/* Header */}
             <div className="p-4 border-b border-gray-800 bg-gray-900/50 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Bot className="w-5 h-5 text-blue-400" />
                     <h2 className="font-semibold text-white">Ask your Documents</h2>
                     {isLoading && (
-                        <span className="text-xs text-gray-400">(Processing...)</span>
+                        <span className="text-xs text-gray-400 animate-pulse">(Processing...)</span>
                     )}
                 </div>
                 {messages.length > 0 && (
                     <button
                         onClick={clearChat}
                         disabled={isLoading}
-                        className="text-xs text-gray-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="text-xs text-gray-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                     >
-                        Clear Chat
+                        <Trash2 className="w-3 h-3" />
+                        Clear
                     </button>
                 )}
             </div>
 
+            {/* Messages Area */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-950">
                 {messages.length === 0 && !errorMessage && (
                     <div className="text-center text-gray-500 mt-20">
@@ -278,10 +220,10 @@ export default function ChatInterface() {
                                     <Bot className="w-5 h-5 text-blue-400" />
                                 </div>
                             )}
-                            <div className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap ${
+                            <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
                                 msg.role === 'user' 
                                     ? 'bg-blue-600 text-white rounded-br-none' 
-                                    : 'bg-gray-800 text-gray-100 rounded-bl-none'
+                                    : 'bg-gray-800 text-gray-100 rounded-bl-none border border-gray-700'
                             }`}>
                                 {msg.content || (
                                     <div className="flex space-x-1 py-1">
@@ -293,27 +235,32 @@ export default function ChatInterface() {
                             </div>
                         </div>
                         
+                        {/* Sources Card */}
                         {msg.sources && msg.sources.length > 0 && (
-                            <div className="ml-11 mr-auto max-w-[75%]">
-                                <details className="bg-gray-800/50 rounded-lg border border-gray-700">
-                                    <summary className="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-gray-300 flex items-center gap-2">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
-                                        {msg.sources.length} source{msg.sources.length > 1 ? 's' : ''} used
-                                    </summary>
-                                    <div className="px-3 pb-3 pt-1 space-y-2">
-                                        {msg.sources.map((source) => (
-                                            <div key={source.id} className="bg-gray-900/50 rounded p-2 text-xs">
+                            <div className="ml-11 mr-auto max-w-[85%] w-full">
+                                <div className="bg-gray-900/50 border border-gray-800 rounded-lg overflow-hidden">
+                                    <div className="px-3 py-2 bg-gray-800/50 text-xs text-gray-400 font-medium flex items-center gap-2">
+                                        <FileText className="w-3 h-3" />
+                                        Sources Used ({msg.sources.length})
+                                    </div>
+                                    <div className="divide-y divide-gray-800/50">
+                                        {msg.sources.map((source, idx) => (
+                                            <div key={idx} className="p-2 hover:bg-gray-800 transition-colors cursor-default">
                                                 <div className="flex items-center justify-between mb-1">
-                                                    <span className="text-blue-400 font-medium">{source.filename}</span>
-                                                    <span className="text-green-400">{source.similarity}% match</span>
+                                                    <span className="text-xs text-blue-400 font-medium truncate max-w-50" title={source.filename}>
+                                                        {source.filename}
+                                                    </span>
+                                                    <span className="text-[10px] text-gray-500 bg-gray-900 px-1.5 py-0.5 rounded">
+                                                        {source.similarity}% match
+                                                    </span>
                                                 </div>
-                                                <p className="text-gray-400 text-[10px] leading-relaxed">{source.preview}</p>
+                                                <p className="text-[10px] text-gray-500 line-clamp-1">
+                                                    {source.preview}
+                                                </p>
                                             </div>
                                         ))}
                                     </div>
-                                </details>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -347,6 +294,7 @@ export default function ChatInterface() {
                 <div ref={messagesEndRef} />
             </div>
 
+            {/* Input Form */}
             <form onSubmit={handleFormSubmit} className="p-4 border-t border-gray-800 bg-gray-900">
                 <div className="flex gap-2">
                     <input
