@@ -1,13 +1,10 @@
 'use server';
 
-import { OpenAI } from 'openai';
+import { openai } from '@ai-sdk/openai';
+import { streamText } from 'ai';
 import { Client } from 'pg';
 import { auth } from '@clerk/nextjs/server';
 import { chatRateLimiter } from '@/lib/rate-limit';
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 export async function searchContext(query: string) {
     const { userId } = await auth();
@@ -23,7 +20,13 @@ export async function searchContext(query: string) {
     try {
         await client.connect();
 
-        const embeddingResponse = await openai.embeddings.create({
+        // Create embedding using OpenAI directly for vector search
+        const OpenAI = (await import('openai')).default;
+        const openaiClient = new OpenAI({
+            apiKey: process.env.OPENAI_API_KEY,
+        });
+
+        const embeddingResponse = await openaiClient.embeddings.create({
             model: 'text-embedding-3-small',
             input: query,
         });
@@ -60,7 +63,7 @@ export async function askAI(userQuestion: string) {
         throw new Error("Not authenticated");
     }
 
-    // 🆕 Rate Limiting Check
+    // Rate Limiting Check
     const { success: rateLimitSuccess, limit, reset, remaining } = await chatRateLimiter.limit(userId);
     
     if (!rateLimitSuccess) {
@@ -77,19 +80,16 @@ export async function askAI(userQuestion: string) {
         return "I couldn't find any relevant information in your uploaded documents.";
     }
 
-    const response = await openai.chat.completions.create({
-        model: "gpt-4-turbo",
+    const result = await streamText({
+        model: openai('gpt-4-turbo'),
+        system: `You are a helpful AI assistant. You must answer the user's question strictly based on the provided Context below.
+        
+        CONTEXT:
+        ${context}`,
         messages: [
-            {
-                role: "system",
-                content: `You are a helpful AI assistant. You must answer the user's question strictly based on the provided Context below.
-                
-                CONTEXT:
-                ${context}`
-            },
-            { role: "user", content: userQuestion }
-        ]
+            { role: 'user', content: userQuestion }
+        ],
     });
 
-    return response.choices[0].message.content;
+    return result.toTextStreamResponse();
 }

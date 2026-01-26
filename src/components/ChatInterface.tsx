@@ -2,17 +2,18 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Send, Bot, AlertCircle, Loader2 } from 'lucide-react';
-import { askAI } from '@/actions/chat';
 
 type Message = {
-    role: 'user' | 'ai' | 'error';
+    role: 'user' | 'assistant';
     content: string;
+    id: string;
 };
 
 export default function ChatInterface() {
-    const [query, setQuery] = useState('');
+    const [input, setInput] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -31,52 +32,182 @@ export default function ChatInterface() {
         }
     }, [isLoading]);
 
-    const handleSend = useCallback(async (text: string) => {
-        if (!text.trim() || isLoading) return;
+    const handleFormSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        
+        if (!input.trim() || isLoading) return;
 
-        const userMessage: Message = { role: 'user', content: text };
+        const userMessage: Message = {
+            id: Date.now().toString(),
+            role: 'user',
+            content: input.trim()
+        };
+
         setMessages(prev => [...prev, userMessage]);
-        setQuery('');
+        setInput('');
         setIsLoading(true);
+        setErrorMessage(null);
+
+        // Create placeholder message immediately
+        const messageId = (Date.now() + 1).toString();
+        setMessages(prev => [...prev, {
+            id: messageId,
+            role: 'assistant',
+            content: ''
+        }]);
 
         try {
-            const response = await askAI(userMessage.content);
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    messages: [...messages, userMessage].map(m => ({
+                        role: m.role,
+                        content: m.content
+                    }))
+                }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Request failed with status ${response.status}`);
+            }
+
+            // Handle streaming response
+            const reader = response.body?.getReader();
+            const decoder = new TextDecoder();
             
-            if (!response) {
-                throw new Error("No response from AI");
+            if (!reader) {
+                throw new Error('No response body');
+            }
+
+            let assistantMessage = '';
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                
+                if (done) break;
+                
+                const chunk = decoder.decode(value, { stream: true });
+                buffer += chunk;
+                
+                // Split by newlines but keep processing incomplete lines
+                const lines = buffer.split('\n');
+                
+                // If buffer doesn't end with newline, keep last line for next iteration
+                if (!buffer.endsWith('\n')) {
+                    buffer = lines.pop() || '';
+                } else {
+                    buffer = '';
+                }
+                
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    
+                    let textChunk = '';
+                    
+                    // Try parsing different formats
+                    if (line.startsWith('0:')) {
+                        // Vercel AI SDK format: 0:"text"
+                        const match = line.match(/0:"(.*)"/);
+                        if (match) {
+                            textChunk = match[1]
+                                .replace(/\\n/g, '\n')
+                                .replace(/\\"/g, '"')
+                                .replace(/\\\\/g, '\\');
+                        }
+                    } else if (line.startsWith('data: ')) {
+                        // SSE format
+                        const data = line.substring(6).trim();
+                        if (data === '[DONE]') break;
+                        try {
+                            const parsed = JSON.parse(data);
+                            textChunk = parsed.content || parsed.text || parsed.delta || '';
+                        } catch {
+                            textChunk = data;
+                        }
+                    } else {
+                        // Try parsing as JSON first
+                        try {
+                            const parsed = JSON.parse(line);
+                            textChunk = parsed.content || parsed.text || parsed.delta || '';
+                        } catch {
+                            // Plain text line - this is what we're receiving!
+                            textChunk = line + '\n';
+                        }
+                    }
+                    
+                    if (textChunk) {
+                        assistantMessage += textChunk;
+                        
+                        // Update UI immediately for each chunk
+                        setMessages(prev => 
+                            prev.map(m => 
+                                m.id === messageId 
+                                    ? { ...m, content: assistantMessage }
+                                    : m
+                            )
+                        );
+                    }
+                }
             }
             
-            const aiMessage: Message = { 
-                role: 'ai', 
-                content: response 
-            };
-            setMessages(prev => [...prev, aiMessage]);
-        
+            // Process any remaining buffer
+            if (buffer.trim()) {
+                assistantMessage += buffer + '\n';
+                setMessages(prev => 
+                    prev.map(m => 
+                        m.id === messageId 
+                            ? { ...m, content: assistantMessage }
+                            : m
+                    )
+                );
+            }
+            
+            // If no message was added, show error
+            if (!assistantMessage) {
+                throw new Error('No response received from AI');
+            }
+
         } catch (error) {
             console.error("Chat error:", error);
-            const errorMessage: Message = { 
-                role: 'error', 
-                content: error instanceof Error ? error.message : "Failed to get AI response. Please try again." 
-            };
-            setMessages(prev => [...prev, errorMessage]);
+            const errorMsg = error instanceof Error ? error.message : "Failed to get AI response. Please try again.";
+            setErrorMessage(errorMsg);
+            
+            // Remove the empty assistant message
+            setMessages(prev => prev.filter(m => m.id !== messageId));
         } finally {
             setIsLoading(false);
         }
-    }, [isLoading]);
+    };
+
+    const handleGraphClick = useCallback((nodeName: string) => {
+        setInput(`Details for "${nodeName}"`);
+        // Auto-submit after setting input
+        setTimeout(() => {
+            const form = inputRef.current?.closest('form');
+            if (form) {
+                form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+            }
+        }, 100);
+    }, []);
 
     useEffect(() => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const handleGraphClick = (e: any) => {
+        const handleGraphClickEvent = (e: CustomEvent) => {
             const nodeName = e.detail;
-            handleSend(`Details for "${nodeName}"`); 
+            handleGraphClick(nodeName);
         };
 
-        window.addEventListener('graph-node-click', handleGraphClick);
-        return () => window.removeEventListener('graph-node-click', handleGraphClick);
-    }, [handleSend]); // Add handleSend as dependency
+        window.addEventListener('graph-node-click', handleGraphClickEvent as EventListener);
+        return () => window.removeEventListener('graph-node-click', handleGraphClickEvent as EventListener);
+    }, [handleGraphClick]);
 
     const clearChat = () => {
         setMessages([]);
+        setErrorMessage(null);
     };
 
     return (
@@ -101,7 +232,7 @@ export default function ChatInterface() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-950">
-                {messages.length === 0 && (
+                {messages.length === 0 && !errorMessage && (
                     <div className="text-center text-gray-500 mt-20">
                         <Bot className="w-12 h-12 mx-auto mb-3 text-gray-600" />
                         <p>Upload a document and ask questions</p>
@@ -109,31 +240,41 @@ export default function ChatInterface() {
                     </div>
                 )}
                 
-                {messages.map((msg, idx) => (
-                    <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        {msg.role === 'ai' && (
+                {messages.map((msg) => (
+                    <div key={msg.id} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        {msg.role === 'assistant' && (
                             <div className="w-8 h-8 rounded-full bg-blue-950/50 flex items-center justify-center shrink-0">
                                 <Bot className="w-5 h-5 text-blue-400" />
                             </div>
                         )}
-                        {msg.role === 'error' && (
-                            <div className="w-8 h-8 rounded-full bg-red-950/50 flex items-center justify-center shrink-0">
-                                <AlertCircle className="w-5 h-5 text-red-400" />
-                            </div>
-                        )}
-                        <div className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${
+                        <div className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap ${
                             msg.role === 'user' 
                                 ? 'bg-blue-600 text-white rounded-br-none' 
-                                : msg.role === 'error'
-                                ? 'bg-red-900/30 text-red-200 border border-red-800 rounded-bl-none'
                                 : 'bg-gray-800 text-gray-100 rounded-bl-none'
                         }`}>
-                            {msg.content}
+                            {msg.content || (
+                                <div className="flex space-x-1 py-1">
+                                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 ))}
+
+                {errorMessage && (
+                    <div className="flex justify-start gap-3">
+                        <div className="w-8 h-8 rounded-full bg-red-950/50 flex items-center justify-center shrink-0">
+                            <AlertCircle className="w-5 h-5 text-red-400" />
+                        </div>
+                        <div className="max-w-[80%] rounded-2xl px-4 py-2 text-sm bg-red-900/30 text-red-200 border border-red-800 rounded-bl-none">
+                            {errorMessage}
+                        </div>
+                    </div>
+                )}
                 
-                {isLoading && (
+                {isLoading && messages[messages.length - 1]?.role === 'user' && (
                     <div className="flex justify-start gap-3">
                         <div className="w-8 h-8 rounded-full bg-blue-950/50 flex items-center justify-center">
                             <Bot className="w-5 h-5 text-blue-400" />
@@ -150,20 +291,20 @@ export default function ChatInterface() {
                 <div ref={messagesEndRef} />
             </div>
 
-            <form onSubmit={(e) => { e.preventDefault(); handleSend(query); }} className="p-4 border-t border-gray-800 bg-gray-900">
+            <form onSubmit={handleFormSubmit} className="p-4 border-t border-gray-800 bg-gray-900">
                 <div className="flex gap-2">
                     <input
                         ref={inputRef}
                         type="text"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
                         placeholder={isLoading ? "Please wait..." : "Type a question..."}
                         className="flex-1 px-4 py-2 border border-gray-700 bg-gray-800 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled={isLoading}
                     />
                     <button 
                         type="submit" 
-                        disabled={isLoading || !query.trim()} 
+                        disabled={isLoading || !input.trim()} 
                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                     >
                         {isLoading ? (
