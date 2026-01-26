@@ -26,7 +26,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider appearance={{ baseTheme: dark }}>
+    <ClerkProvider
+        appearance={{ baseTheme: dark }}
+        signInFallbackRedirectUrl="/"
+        signUpFallbackRedirectUrl="/"
+      >
       <html lang="en" suppressHydrationWarning={true}>
         <body
           className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-950`}
@@ -45,7 +49,7 @@ export default function RootLayout({
                   </SignInButton>
                 </SignedOut>
                 <SignedIn>
-                  <UserButton afterSignOutUrl="/" />
+                  <UserButton />
                 </SignedIn>
               </div>
             </div>

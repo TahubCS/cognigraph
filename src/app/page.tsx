@@ -1,6 +1,7 @@
 import FileUpload from '@/components/FileUpload';
 import ChatInterface from '@/components/ChatInterface';
 import GraphVisualization from '@/components/GraphVisualization';
+import DocumentList from '@/components/DocumentsList' // <--- Import
 import { Toaster } from 'react-hot-toast';
 import { SignedIn, SignedOut, SignInButton } from '@clerk/nextjs';
 
@@ -44,6 +45,10 @@ export default function Home() {
 
           <div className="grid gap-8">
             <FileUpload />
+            
+            {/* New Document List Component */}
+            <DocumentList />
+            
             <GraphVisualization />
             <ChatInterface />
           </div>
