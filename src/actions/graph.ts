@@ -2,14 +2,25 @@
 
 import { Client } from 'pg';
 import { auth } from '@clerk/nextjs/server';
+import { graphRateLimiter } from '@/lib/rate-limit';
 
 export async function getGraphData() {
-    // Get authenticated user
     const { userId } = await auth();
     
     if (!userId) {
         return { nodes: [], links: [] };
     }
+
+    // 🆕 Rate Limiting Check
+    const { success: rateLimitSuccess, limit, remaining } = await graphRateLimiter.limit(userId);
+    
+    if (!rateLimitSuccess) {
+        console.log(`⏱️ Rate limit exceeded for graph data: ${remaining}/${limit}`);
+        // For graph, we'll just log and return empty instead of throwing
+        return { nodes: [], links: [] };
+    }
+
+    console.log(`⏱️ Rate limit: ${remaining}/${limit} graph requests remaining for user ${userId}`);
 
     const client = new Client({
         connectionString: process.env.DATABASE_URL,
@@ -18,7 +29,6 @@ export async function getGraphData() {
     try {
         await client.connect();
 
-        // 1. Fetch Nodes - ONLY for this user's documents
         const nodesResult = await client.query(`
             SELECT DISTINCT n.id, n.label, n.type 
             FROM nodes n
@@ -26,7 +36,6 @@ export async function getGraphData() {
             WHERE d.user_id = $1
         `, [userId]);
 
-        // 2. Fetch Edges - ONLY for this user's documents
         const edgesResult = await client.query(`
             SELECT DISTINCT e.source_node_id as source, e.target_node_id as target, e.relationship as label 
             FROM edges e

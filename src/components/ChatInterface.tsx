@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { Send, Bot, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Send, Bot, AlertCircle, Loader2 } from 'lucide-react';
 import { askAI } from '@/actions/chat';
 
 type Message = {
@@ -14,6 +14,7 @@ export default function ChatInterface() {
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -23,7 +24,14 @@ export default function ChatInterface() {
         scrollToBottom();
     }, [messages]);
 
-    async function handleSend(text: string) {
+    // Focus input after loading completes
+    useEffect(() => {
+        if (!isLoading) {
+            inputRef.current?.focus();
+        }
+    }, [isLoading]);
+
+    const handleSend = useCallback(async (text: string) => {
         if (!text.trim() || isLoading) return;
 
         const userMessage: Message = { role: 'user', content: text };
@@ -54,7 +62,7 @@ export default function ChatInterface() {
         } finally {
             setIsLoading(false);
         }
-    }
+    }, [isLoading]);
 
     useEffect(() => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -65,8 +73,7 @@ export default function ChatInterface() {
 
         window.addEventListener('graph-node-click', handleGraphClick);
         return () => window.removeEventListener('graph-node-click', handleGraphClick);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [handleSend]); // Add handleSend as dependency
 
     const clearChat = () => {
         setMessages([]);
@@ -78,11 +85,15 @@ export default function ChatInterface() {
                 <div className="flex items-center gap-2">
                     <Bot className="w-5 h-5 text-blue-400" />
                     <h2 className="font-semibold text-white">Ask your Documents</h2>
+                    {isLoading && (
+                        <span className="text-xs text-gray-400">(Processing...)</span>
+                    )}
                 </div>
                 {messages.length > 0 && (
                     <button
                         onClick={clearChat}
-                        className="text-xs text-gray-400 hover:text-white transition-colors"
+                        disabled={isLoading}
+                        className="text-xs text-gray-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         Clear Chat
                     </button>
@@ -142,19 +153,24 @@ export default function ChatInterface() {
             <form onSubmit={(e) => { e.preventDefault(); handleSend(query); }} className="p-4 border-t border-gray-800 bg-gray-900">
                 <div className="flex gap-2">
                     <input
+                        ref={inputRef}
                         type="text"
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
-                        placeholder="Type a question..."
-                        className="flex-1 px-4 py-2 border border-gray-700 bg-gray-800 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-500"
+                        placeholder={isLoading ? "Please wait..." : "Type a question..."}
+                        className="flex-1 px-4 py-2 border border-gray-700 bg-gray-800 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled={isLoading}
                     />
                     <button 
                         type="submit" 
                         disabled={isLoading || !query.trim()} 
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                     >
-                        <Send className="w-5 h-5" />
+                        {isLoading ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                            <Send className="w-5 h-5" />
+                        )}
                     </button>
                 </div>
             </form>

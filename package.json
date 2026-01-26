@@ -13,6 +13,8 @@
     "@aws-sdk/s3-request-presigner": "^3.975.0",
     "@clerk/nextjs": "^6.36.10",
     "@clerk/themes": "^2.4.50",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.36.1",
     "lucide-react": "^0.563.0",
     "next": "16.1.4",
     "openai": "^6.16.0",

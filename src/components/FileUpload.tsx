@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Upload, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { Upload, Loader2, CheckCircle } from 'lucide-react';
 import { getPresignedUrl, triggerProcessing } from '@/actions/storage';
 import toast from 'react-hot-toast';
 import ErrorMessage from './ErrorMessage';
@@ -42,9 +42,14 @@ export default function FileUpload() {
         try {
             // Step 1: Get presigned URL
             toast.loading("Getting upload URL...", { id: toastId });
-            const { success, url, fileKey, documentId, error } = await getPresignedUrl(file.name, file.type);
+            const { success, url, fileKey, documentId, error, rateLimitError, resetAt } = await getPresignedUrl(file.name, file.type);
 
             if (!success || !url) {
+                if (rateLimitError && resetAt) {
+                    const resetDate = new Date(resetAt);
+                    const errorMsg = `${error}\n\nYou've uploaded too many files too quickly. Your limit resets at ${resetDate.toLocaleTimeString()}.`;
+                    throw new Error(errorMsg);
+                }
                 throw new Error(error || "Failed to get upload URL from server");
             }
 

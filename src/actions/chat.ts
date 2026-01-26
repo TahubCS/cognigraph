@@ -3,13 +3,13 @@
 import { OpenAI } from 'openai';
 import { Client } from 'pg';
 import { auth } from '@clerk/nextjs/server';
+import { chatRateLimiter } from '@/lib/rate-limit';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
 export async function searchContext(query: string) {
-    // Get authenticated user
     const { userId } = await auth();
     
     if (!userId) {
@@ -23,14 +23,12 @@ export async function searchContext(query: string) {
     try {
         await client.connect();
 
-        // 1. Generate Query Vector
         const embeddingResponse = await openai.embeddings.create({
             model: 'text-embedding-3-small',
             input: query,
         });
         const vector = JSON.stringify(embeddingResponse.data[0].embedding);
 
-        // 2. Search Database - ONLY for this user's documents
         const result = await client.query(`
             SELECT 
                 e.content, 
@@ -38,7 +36,7 @@ export async function searchContext(query: string) {
             FROM embeddings e
             JOIN documents d ON e.document_id = d.id
             WHERE d.user_id = $2 
-            AND 1 - (e.embedding <=> $1) > 0.01
+              AND 1 - (e.embedding <=> $1) > 0.01
             ORDER BY e.embedding <=> $1
             LIMIT 5;
         `, [vector, userId]);
@@ -56,6 +54,22 @@ export async function searchContext(query: string) {
 }
 
 export async function askAI(userQuestion: string) {
+    const { userId } = await auth();
+    
+    if (!userId) {
+        throw new Error("Not authenticated");
+    }
+
+    // 🆕 Rate Limiting Check
+    const { success: rateLimitSuccess, limit, reset, remaining } = await chatRateLimiter.limit(userId);
+    
+    if (!rateLimitSuccess) {
+        const waitSeconds = Math.ceil((reset - Date.now()) / 1000);
+        throw new Error(`Rate limit exceeded. You can send ${remaining}/${limit} more messages. Try again in ${waitSeconds} seconds.`);
+    }
+
+    console.log(`⏱️ Rate limit: ${remaining}/${limit} messages remaining for user ${userId}`);
+
     const context = await searchContext(userQuestion);
 
     if (!context) {

@@ -4,6 +4,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Client } from 'pg';
 import { auth } from '@clerk/nextjs/server';
+import { uploadRateLimiter } from '@/lib/rate-limit';
 
 const s3Client = new S3Client({
     region: process.env.AWS_REGION!,
@@ -15,12 +16,27 @@ const s3Client = new S3Client({
 });
 
 export async function getPresignedUrl(filename: string, contentType: string) {
-    // Get the authenticated user
     const { userId } = await auth();
     
     if (!userId) {
         return { success: false, error: "Not authenticated" };
     }
+
+    // 🆕 Rate Limiting Check
+    const { success: rateLimitSuccess, limit, reset, remaining } = await uploadRateLimiter.limit(userId);
+    
+    if (!rateLimitSuccess) {
+        const resetDate = new Date(reset);
+        const waitSeconds = Math.ceil((reset - Date.now()) / 1000);
+        return { 
+            success: false, 
+            error: `Rate limit exceeded. You can upload ${remaining}/${limit} more files. Try again in ${waitSeconds} seconds.`,
+            rateLimitError: true,
+            resetAt: resetDate.toISOString(),
+        };
+    }
+
+    console.log(`⏱️ Rate limit: ${remaining}/${limit} uploads remaining for user ${userId}`);
 
     const dbClient = new Client({
         connectionString: process.env.DATABASE_URL,
@@ -31,7 +47,6 @@ export async function getPresignedUrl(filename: string, contentType: string) {
         await dbClient.connect();
         console.log("✅ Database connected");
 
-        // Use real user ID instead of hardcoded "user_123"
         const fileKey = `${userId}/${Date.now()}-${filename}`;
 
         console.log("💾 Inserting document record...");
