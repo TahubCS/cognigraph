@@ -7,6 +7,12 @@ type Message = {
     role: 'user' | 'assistant';
     content: string;
     id: string;
+    sources?: Array<{
+        id: number;
+        filename: string;
+        similarity: string;
+        preview: string;
+    }>;
 };
 
 export default function ChatInterface() {
@@ -85,6 +91,7 @@ export default function ChatInterface() {
 
             let assistantMessage = '';
             let buffer = '';
+            let sources: Message['sources'] = [];
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -93,6 +100,29 @@ export default function ChatInterface() {
                 
                 const chunk = decoder.decode(value, { stream: true });
                 buffer += chunk;
+                
+                // Check if we've received the sources marker
+                if (buffer.includes('__SOURCES__:')) {
+                    const [textPart, sourcesPart] = buffer.split('__SOURCES__:');
+                    assistantMessage = textPart.trim();
+                    
+                    // Parse sources
+                    try {
+                        sources = JSON.parse(sourcesPart);
+                    } catch (e) {
+                        console.error('Failed to parse sources:', e);
+                    }
+                    
+                    // Update final message with sources
+                    setMessages(prev => 
+                        prev.map(m => 
+                            m.id === messageId 
+                                ? { ...m, content: assistantMessage, sources }
+                                : m
+                        )
+                    );
+                    break;
+                }
                 
                 // Split by newlines but keep processing incomplete lines
                 const lines = buffer.split('\n');
@@ -105,7 +135,7 @@ export default function ChatInterface() {
                 }
                 
                 for (const line of lines) {
-                    if (!line.trim()) continue;
+                    if (!line.trim() || line.includes('__SOURCES__')) continue;
                     
                     let textChunk = '';
                     
@@ -135,7 +165,7 @@ export default function ChatInterface() {
                             const parsed = JSON.parse(line);
                             textChunk = parsed.content || parsed.text || parsed.delta || '';
                         } catch {
-                            // Plain text line - this is what we're receiving!
+                            // Plain text line
                             textChunk = line + '\n';
                         }
                     }
@@ -155,13 +185,13 @@ export default function ChatInterface() {
                 }
             }
             
-            // Process any remaining buffer
-            if (buffer.trim()) {
+            // Process any remaining buffer (excluding sources marker)
+            if (buffer.trim() && !buffer.includes('__SOURCES__')) {
                 assistantMessage += buffer + '\n';
                 setMessages(prev => 
                     prev.map(m => 
                         m.id === messageId 
-                            ? { ...m, content: assistantMessage }
+                            ? { ...m, content: assistantMessage, sources }
                             : m
                     )
                 );
@@ -241,25 +271,51 @@ export default function ChatInterface() {
                 )}
                 
                 {messages.map((msg) => (
-                    <div key={msg.id} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        {msg.role === 'assistant' && (
-                            <div className="w-8 h-8 rounded-full bg-blue-950/50 flex items-center justify-center shrink-0">
-                                <Bot className="w-5 h-5 text-blue-400" />
-                            </div>
-                        )}
-                        <div className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap ${
-                            msg.role === 'user' 
-                                ? 'bg-blue-600 text-white rounded-br-none' 
-                                : 'bg-gray-800 text-gray-100 rounded-bl-none'
-                        }`}>
-                            {msg.content || (
-                                <div className="flex space-x-1 py-1">
-                                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                    <div key={msg.id} className="flex flex-col gap-2">
+                        <div className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            {msg.role === 'assistant' && (
+                                <div className="w-8 h-8 rounded-full bg-blue-950/50 flex items-center justify-center shrink-0">
+                                    <Bot className="w-5 h-5 text-blue-400" />
                                 </div>
                             )}
+                            <div className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap ${
+                                msg.role === 'user' 
+                                    ? 'bg-blue-600 text-white rounded-br-none' 
+                                    : 'bg-gray-800 text-gray-100 rounded-bl-none'
+                            }`}>
+                                {msg.content || (
+                                    <div className="flex space-x-1 py-1">
+                                        <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                        <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                        <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
+                        
+                        {msg.sources && msg.sources.length > 0 && (
+                            <div className="ml-11 mr-auto max-w-[75%]">
+                                <details className="bg-gray-800/50 rounded-lg border border-gray-700">
+                                    <summary className="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-gray-300 flex items-center gap-2">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        {msg.sources.length} source{msg.sources.length > 1 ? 's' : ''} used
+                                    </summary>
+                                    <div className="px-3 pb-3 pt-1 space-y-2">
+                                        {msg.sources.map((source) => (
+                                            <div key={source.id} className="bg-gray-900/50 rounded p-2 text-xs">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <span className="text-blue-400 font-medium">{source.filename}</span>
+                                                    <span className="text-green-400">{source.similarity}% match</span>
+                                                </div>
+                                                <p className="text-gray-400 text-[10px] leading-relaxed">{source.preview}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </details>
+                            </div>
+                        )}
                     </div>
                 ))}
 

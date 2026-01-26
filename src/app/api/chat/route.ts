@@ -29,7 +29,8 @@ async function searchContext(query: string, userId: string) {
 
         const result = await client.query(`
             SELECT 
-                e.content, 
+                e.content,
+                d.filename,
                 1 - (e.embedding <=> $1) as similarity
             FROM embeddings e
             JOIN documents d ON e.document_id = d.id
@@ -41,11 +42,20 @@ async function searchContext(query: string, userId: string) {
 
         console.log(`🔍 Found ${result.rows.length} relevant chunks for user ${userId}`);
 
-        return result.rows.map(row => row.content).join('\n\n');
+        // Return both context and sources
+        const context = result.rows.map(row => row.content).join('\n\n');
+        const sources = result.rows.map((row, idx) => ({
+            id: idx + 1,
+            filename: row.filename,
+            similarity: (row.similarity * 100).toFixed(1),
+            preview: row.content.substring(0, 150) + '...'
+        }));
+
+        return { context, sources };
 
     } catch (error) {
         console.error("Search failed:", error);
-        return "";
+        return { context: '', sources: [] };
     } finally {
         await client.end();
     }
@@ -84,13 +94,14 @@ export async function POST(req: Request) {
         const userQuestion = lastMessage.content;
 
         // Search for relevant context
-        const context = await searchContext(userQuestion, userId);
+        const { context, sources } = await searchContext(userQuestion, userId);
 
         if (!context) {
             console.log("⚠️ No context found for this user.");
             return new Response(
                 JSON.stringify({ 
-                    content: "I couldn't find any relevant information in your uploaded documents." 
+                    content: "I couldn't find any relevant information in your uploaded documents.",
+                    sources: []
                 }),
                 { 
                     status: 200,
@@ -105,11 +116,42 @@ export async function POST(req: Request) {
             system: `You are a helpful AI assistant. You must answer the user's question strictly based on the provided Context below.
             
             CONTEXT:
-            ${context}`,
+            ${context}
+            
+            When referencing information, mention which document it came from when relevant.`,
             messages: messages,
         });
 
-        return result.toTextStreamResponse();
+        // Get the text stream
+        const stream = result.textStream;
+        
+        // Create a custom stream that appends sources at the end
+        const encoder = new TextEncoder();
+        const customStream = new ReadableStream({
+            async start(controller) {
+                try {
+                    // Stream all the AI response text
+                    for await (const chunk of stream) {
+                        controller.enqueue(encoder.encode(chunk));
+                    }
+                    
+                    // Append sources metadata at the end as a special marker
+                    const sourcesMarker = `\n\n__SOURCES__:${JSON.stringify(sources)}`;
+                    controller.enqueue(encoder.encode(sourcesMarker));
+                    
+                    controller.close();
+                } catch (error) {
+                    controller.error(error);
+                }
+            }
+        });
+
+        return new Response(customStream, {
+            headers: {
+                'Content-Type': 'text/plain; charset=utf-8',
+                'Transfer-Encoding': 'chunked',
+            }
+        });
         
     } catch (error) {
         console.error('Chat API error:', error);
