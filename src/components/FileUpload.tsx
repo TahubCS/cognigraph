@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Upload, Loader2, CheckCircle } from 'lucide-react';
 import { getPresignedUrl, triggerProcessing } from '@/actions/storage';
+import { deleteDocument } from '@/actions/documents'; // 1. Import delete action
 import toast from 'react-hot-toast';
 import ErrorMessage from './ErrorMessage';
 
@@ -15,23 +16,17 @@ export default function FileUpload() {
         const file = event.target.files?.[0];
         if (!file) return;
 
-        // Clear previous errors
         setUploadError(null);
 
         // Validation
         const maxSize = 5 * 1024 * 1024; // 5MB
         if (file.size > maxSize) {
-            const errorMsg = `File "${file.name}" is too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Maximum size is 5MB.`;
-            setUploadError(errorMsg);
             toast.error("File too large");
             return;
         }
 
-        // Check file type
         const allowedTypes = ['application/pdf', 'text/plain'];
         if (!allowedTypes.includes(file.type)) {
-            const errorMsg = `File type "${file.type}" is not supported. Please upload a PDF or TXT file.`;
-            setUploadError(errorMsg);
             toast.error("Invalid file type");
             return;
         }
@@ -39,22 +34,27 @@ export default function FileUpload() {
         setIsUploading(true);
         const toastId = toast.loading("Initializing upload...");
 
+        // Variable to track ID for cleanup
+        let currentDocumentId: string | null = null;
+
         try {
             // Step 1: Get presigned URL
             toast.loading("Getting upload URL...", { id: toastId });
             const { success, url, fileKey, documentId, error, rateLimitError, resetAt } = await getPresignedUrl(file.name, file.type);
 
-            if (!success || !url) {
+            if (!success || !url || !documentId) {
                 if (rateLimitError && resetAt) {
                     const resetDate = new Date(resetAt);
-                    const errorMsg = `${error}\n\nYou've uploaded too many files too quickly. Your limit resets at ${resetDate.toLocaleTimeString()}.`;
-                    throw new Error(errorMsg);
+                    throw new Error(`${error}\n\nReset at: ${resetDate.toLocaleTimeString()}`);
                 }
-                throw new Error(error || "Failed to get upload URL from server");
+                throw new Error(error || "Failed to get upload URL");
             }
 
+            // Store ID for potential rollback
+            currentDocumentId = documentId;
+
             // Step 2: Upload to S3
-            toast.loading(`Uploading "${file.name}" to cloud storage...`, { id: toastId });
+            toast.loading(`Uploading "${file.name}"...`, { id: toastId });
             
             const uploadResponse = await fetch(url, {
                 method: "PUT",
@@ -62,8 +62,7 @@ export default function FileUpload() {
             });
 
             if (!uploadResponse.ok) {
-                const errorText = await uploadResponse.text();
-                throw new Error(`S3 upload failed: ${uploadResponse.status} - ${errorText || 'Unknown error'}`);
+                throw new Error(`Upload failed: ${uploadResponse.status}`);
             }
 
             // Step 3: Trigger AI processing
@@ -71,7 +70,7 @@ export default function FileUpload() {
             const processingResult = await triggerProcessing(fileKey, documentId);
             
             if (!processingResult.success) {
-                throw new Error("AI processing failed to start. The file was uploaded but won't be analyzed.");
+                throw new Error("AI processing failed to start");
             }
 
             // Success!
@@ -79,17 +78,21 @@ export default function FileUpload() {
             setLastUploadedFile(file.name);
             console.log("✅ File uploaded successfully:", fileKey);
             
-            // Trigger graph refresh
             window.dispatchEvent(new CustomEvent('file-uploaded'));
-            
-            // Clear the file input
             event.target.value = '';
             
         } catch (err) {
             console.error("Upload error:", err);
             const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred";
+            
+            // 🛑 ROLLBACK: Delete the document record if it was created
+            if (currentDocumentId) {
+                console.log(`⚠️ Error occurred. Cleaning up document ${currentDocumentId}...`);
+                await deleteDocument(currentDocumentId); 
+            }
+
             setUploadError(errorMessage);
-            toast.error("Upload failed", { id: toastId });
+            toast.error(errorMessage, { id: toastId });
         } finally {
             setIsUploading(false);
         }
@@ -97,7 +100,6 @@ export default function FileUpload() {
 
     const retryUpload = () => {
         setUploadError(null);
-        // Trigger file input click
         document.getElementById('file-input')?.click();
     };
 
@@ -145,7 +147,6 @@ export default function FileUpload() {
                 </div>
             </div>
 
-            {/* Error Display */}
             {uploadError && (
                 <ErrorMessage
                     title="Upload Failed"

@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { FileText, Loader2, Trash2, CheckCircle, Clock, XCircle } from 'lucide-react';
 import { getDocuments, deleteDocument } from '@/actions/documents';
+import toast from 'react-hot-toast'; // 1. Add Toast import
 
 type Document = {
     id: string;
@@ -16,34 +17,72 @@ export default function DocumentList() {
     const [isLoading, setIsLoading] = useState(true);
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
-    const loadDocuments = async () => {
-        setIsLoading(true);
-        const docs = await getDocuments();
-        setDocuments(docs);
-        setIsLoading(false);
-    };
+    const loadDocuments = useCallback(async (isBackground = false) => {
+        if (!isBackground) setIsLoading(true);
+        
+        try {
+            const docs = await getDocuments();
+            setDocuments(docs);
+        } catch (error) {
+            console.error("Failed to load documents:", error);
+        } finally {
+            if (!isBackground) setIsLoading(false);
+        }
+    }, []);
 
+    // Initial Load & Event Listener
     useEffect(() => {
-        // Defer initial load to avoid calling setState synchronously inside the effect
-        const initTimer = window.setTimeout(() => {
-            loadDocuments();
-        }, 0);
+        let isMounted = true;
+        const load = async () => { if (isMounted) await loadDocuments(); };
+        load();
 
-        // Listen for file upload events
         const handleFileUploaded = () => {
-            console.log('📄 File uploaded, refreshing document list...');
-            setTimeout(() => {
-                loadDocuments();
-            }, 1000);
+            loadDocuments(true); 
         };
 
         window.addEventListener('file-uploaded', handleFileUploaded);
-        
         return () => {
-            window.clearTimeout(initTimer);
+            isMounted = false;
             window.removeEventListener('file-uploaded', handleFileUploaded);
         };
-    }, []);
+    }, [loadDocuments]);
+
+    // Polling Effect (Checks periodically if files are processing)
+    useEffect(() => {
+        const processingDocs = documents.some(doc => 
+            doc.status === 'PENDING' || doc.status === 'PROCESSING'
+        );
+
+        if (processingDocs) {
+            const intervalId = setInterval(() => {
+                loadDocuments(true);
+            }, 2000); 
+            return () => clearInterval(intervalId);
+        }
+    }, [documents, loadDocuments]);
+
+    // 🆕 AUTO-CLEANUP EFFECT
+    // This watches for 'FAILED' documents, deletes them, and notifies the user.
+    useEffect(() => {
+        const failedDocs = documents.filter(doc => doc.status === 'FAILED');
+        
+        if (failedDocs.length > 0) {
+            failedDocs.forEach(async (doc) => {
+                console.log(`❌ Cleanup: Removing failed document ${doc.filename}`);
+                
+                // 1. Notify User
+                toast.error(`Processing failed for "${doc.filename}". Removing file.`);
+
+                // 2. Delete from Server
+                // We use a fire-and-forget approach here for the server call
+                // but immediately update UI to remove the red error row.
+                await deleteDocument(doc.id);
+
+                // 3. Update Local State to remove the failed item
+                setDocuments(prev => prev.filter(d => d.id !== doc.id));
+            });
+        }
+    }, [documents]);
 
     const handleDelete = async (id: string, filename: string) => {
         if (!confirm(`Delete "${filename}"?`)) return;
@@ -52,9 +91,10 @@ export default function DocumentList() {
         const result = await deleteDocument(id);
         
         if (result.success) {
+            toast.success("Document deleted");
             setDocuments(prev => prev.filter(doc => doc.id !== id));
         } else {
-            alert(`Failed to delete: ${result.error}`);
+            toast.error(`Failed to delete: ${result.error}`);
         }
         
         setDeletingId(null);
@@ -68,7 +108,7 @@ export default function DocumentList() {
                 return <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />;
             case 'PENDING':
                 return <Clock className="w-4 h-4 text-yellow-400" />;
-            case 'FAILED':
+            case 'FAILED': // This icon might flicker briefly before auto-deletion
                 return <XCircle className="w-4 h-4 text-red-400" />;
             default:
                 return <Clock className="w-4 h-4 text-gray-400" />;
@@ -77,16 +117,11 @@ export default function DocumentList() {
 
     const getStatusColor = (status: string) => {
         switch (status) {
-            case 'COMPLETED':
-                return 'text-green-400';
-            case 'PROCESSING':
-                return 'text-blue-400';
-            case 'PENDING':
-                return 'text-yellow-400';
-            case 'FAILED':
-                return 'text-red-400';
-            default:
-                return 'text-gray-400';
+            case 'COMPLETED': return 'text-green-400';
+            case 'PROCESSING': return 'text-blue-400';
+            case 'PENDING': return 'text-yellow-400';
+            case 'FAILED': return 'text-red-400';
+            default: return 'text-gray-400';
         }
     };
 
@@ -98,7 +133,7 @@ export default function DocumentList() {
                     Your Documents
                 </h3>
                 <button
-                    onClick={loadDocuments}
+                    onClick={() => loadDocuments(false)}
                     disabled={isLoading}
                     className="text-xs text-gray-400 hover:text-white transition-colors disabled:opacity-50"
                 >

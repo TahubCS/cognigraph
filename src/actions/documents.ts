@@ -2,6 +2,16 @@
 
 import { Client } from 'pg';
 import { auth } from '@clerk/nextjs/server';
+import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
+
+// Initialize S3 Client (Same config as storage.ts)
+const s3Client = new S3Client({
+    region: process.env.AWS_REGION!,
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+    },
+});
 
 export async function getDocuments() {
     const { userId } = await auth();
@@ -48,18 +58,48 @@ export async function deleteDocument(documentId: string) {
     try {
         await client.connect();
 
-        // Verify ownership before deleting
-        const result = await client.query(`
-            DELETE FROM documents
+        // 1. Get the file_key BEFORE deleting the record
+        const fileResult = await client.query(`
+            SELECT file_key, filename 
+            FROM documents 
             WHERE id = $1 AND user_id = $2
-            RETURNING id
         `, [documentId, userId]);
 
-        if (result.rowCount === 0) {
+        if (fileResult.rowCount === 0) {
             return { success: false, error: "Document not found or access denied" };
         }
 
-        console.log(`🗑️ Deleted document ${documentId} for user ${userId}`);
+        const fileKey = fileResult.rows[0].file_key;
+        const filename = fileResult.rows[0].filename;
+
+        // 2. Delete from S3
+        if (fileKey) {
+            try {
+                const command = new DeleteObjectCommand({
+                    Bucket: process.env.AWS_BUCKET_NAME,
+                    Key: fileKey,
+                });
+                await s3Client.send(command);
+                console.log(`🗑️ S3: Deleted object ${fileKey}`);
+            } catch (s3Error) {
+                console.error(`⚠️ S3 Delete Warning: Could not delete ${fileKey}`, s3Error);
+                // We continue to delete the DB record so the UI doesn't get stuck, 
+                // but we log this for admin review.
+            }
+        }
+
+        // 3. Delete from Database
+        await client.query(`
+            DELETE FROM documents
+            WHERE id = $1 AND user_id = $2
+        `, [documentId, userId]);
+
+        console.log(`🗑️ DB: Deleted document record ${documentId} (${filename})`);
+        
+        // 4. (Optional) Cleanup Embeddings/Nodes?
+        // Depending on your DB schema 'ON DELETE CASCADE', this might happen automatically.
+        // If not, you might need to manually delete from 'embeddings' and 'nodes' tables here too.
+        
         return { success: true };
 
     } catch (error) {
