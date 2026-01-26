@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Trash2, FileText, Loader2, Calendar, CheckCircle2, AlertCircle } from 'lucide-react';
 import { getUserDocuments, deleteDocument } from '@/actions/documents';
 import toast from 'react-hot-toast';
@@ -17,36 +17,45 @@ export default function DocumentList() {
     const [docs, setDocs] = useState<Doc[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [deletingId, setDeletingId] = useState<string | null>(null);
+    
+    // Track previous processing state to detect completion
+    const wasProcessingRef = useRef(false);
 
-    // Fetch docs function
     const loadDocs = useCallback(async () => {
         const documents = await getUserDocuments();
         setDocs(documents);
         setIsLoading(false);
-        return documents; // Return for checking status
+        return documents; 
     }, []);
 
-    // 1. Initial Load & Event Listener
+    // 1. Initial Load & Listeners
     useEffect(() => {
         loadDocs();
-
-        // Listen for new uploads to trigger immediate refresh
         const handleRefresh = () => {
-            console.log("♻️ Refreshing document list...");
-            setIsLoading(true); // Show loading briefly to indicate activity
+            setIsLoading(true);
             loadDocs();
         };
-
         window.addEventListener('refresh-doc-list', handleRefresh);
         return () => window.removeEventListener('refresh-doc-list', handleRefresh);
     }, [loadDocs]);
 
-    // 2. POLLING: If any doc is processing, check again every 2 seconds
+    // 2. SMART POLLING & GRAPH REFRESH
     useEffect(() => {
-        // Check if we have any active jobs
-        const hasActiveJobs = docs.some(d => d.status === 'PENDING' || d.status === 'PROCESSING');
+        // Check if anything is currently processing
+        const isProcessing = docs.some(d => d.status === 'PENDING' || d.status === 'PROCESSING');
 
-        if (hasActiveJobs) {
+        // TRIGGER GRAPH UPDATE:
+        // If we WERE processing, and now we are NOT, it means a job just finished!
+        if (wasProcessingRef.current && !isProcessing) {
+            console.log("✅ Processing finished! Updating Graph...");
+            window.dispatchEvent(new Event('refresh-graph'));
+        }
+
+        // Update ref for next render
+        wasProcessingRef.current = isProcessing;
+
+        // Continue polling if needed
+        if (isProcessing) {
             const interval = setInterval(() => {
                 loadDocs();
             }, 2000);
@@ -65,7 +74,9 @@ export default function DocumentList() {
             if (result.success) {
                 toast.success("Document deleted", { id: toastId });
                 setDocs(prev => prev.filter(d => d.id !== doc.id));
-                window.dispatchEvent(new Event('graph-node-click')); 
+                
+                // TRIGGER GRAPH UPDATE ON DELETE
+                window.dispatchEvent(new Event('refresh-graph')); 
             } else {
                 toast.error("Failed to delete", { id: toastId });
             }
@@ -96,19 +107,17 @@ export default function DocumentList() {
                 {docs.map((doc) => (
                     <div key={doc.id} className="p-4 flex items-center justify-between hover:bg-gray-800/50 transition-colors">
                         <div className="flex items-center gap-4">
-                            {/* Status Icon */}
                             <div className={`w-10 h-10 rounded-lg flex items-center justify-center border ${
                                 doc.status === 'COMPLETED' ? 'bg-green-950/30 border-green-900 text-green-500' : 
                                 doc.status === 'FAILED' ? 'bg-red-950/30 border-red-900 text-red-500' : 
                                 'bg-blue-950/30 border-blue-900 text-blue-400'
                             }`}>
                                 {doc.status === 'COMPLETED' ? <CheckCircle2 className="w-5 h-5" /> :
-                                doc.status === 'FAILED' ? <AlertCircle className="w-5 h-5" /> :
-                                <Loader2 className="w-5 h-5 animate-spin" />} 
+                                 doc.status === 'FAILED' ? <AlertCircle className="w-5 h-5" /> :
+                                 <Loader2 className="w-5 h-5 animate-spin" />} 
                             </div>
-                            
                             <div>
-                                <h3 className="text-white font-medium truncate   sm:max-w-md">
+                                <h3 className="text-white font-medium truncate max-w-50 sm:max-w-md">
                                     {doc.filename}
                                 </h3>
                                 <div className="flex items-center gap-3 text-xs text-gray-400 mt-1">
@@ -116,15 +125,13 @@ export default function DocumentList() {
                                         <Calendar className="w-3 h-3" />
                                         {new Date(doc.created_at).toLocaleDateString()}
                                     </span>
-                                    
-                                    {/* Status Badge */}
                                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
                                         doc.status === 'COMPLETED' ? 'bg-green-900/20 border-green-800 text-green-400' : 
                                         doc.status === 'FAILED' ? 'bg-red-900/20 border-red-800 text-red-400' : 
                                         'bg-blue-900/20 border-blue-800 text-blue-400 animate-pulse'
                                     }`}>
                                         {doc.status === 'PENDING' ? 'QUEUED' : 
-                                         doc.status === 'PROCESSING' ? 'CHUNKING & EMBEDDING...' : 
+                                         doc.status === 'PROCESSING' ? 'AI PROCESSING...' : 
                                          doc.status}
                                     </span>
                                 </div>
@@ -134,14 +141,9 @@ export default function DocumentList() {
                         <button 
                             onClick={() => handleDelete(doc)}
                             disabled={deletingId === doc.id || doc.status === 'PROCESSING'}
-                            className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="Delete Document"
+                            className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-all disabled:opacity-30"
                         >
-                            {deletingId === doc.id ? (
-                                <Loader2 className="w-5 h-5 animate-spin" />
-                            ) : (
-                                <Trash2 className="w-5 h-5" />
-                            )}
+                            {deletingId === doc.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
                         </button>
                     </div>
                 ))}

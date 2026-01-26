@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Send, Bot } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Send, Bot, AlertCircle } from 'lucide-react';
 import { askAI } from '@/actions/chat';
 
 type Message = {
-    role: 'user' | 'ai';
+    role: 'user' | 'ai' | 'error';
     content: string;
 };
 
@@ -13,6 +13,15 @@ export default function ChatInterface() {
     const [query, setQuery] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
 
     async function handleSend(text: string) {
         if (!text.trim() || isLoading) return;
@@ -24,11 +33,24 @@ export default function ChatInterface() {
 
         try {
             const response = await askAI(userMessage.content);
-            const aiMessage: Message = { role: 'ai', content: response || "Error getting response." };
+            
+            if (!response) {
+                throw new Error("No response from AI");
+            }
+            
+            const aiMessage: Message = { 
+                role: 'ai', 
+                content: response 
+            };
             setMessages(prev => [...prev, aiMessage]);
+        
         } catch (error) {
-            console.error(error);
-            setMessages(prev => [...prev, { role: 'ai', content: "Something went wrong." }]);
+            console.error("Chat error:", error);
+            const errorMessage: Message = { 
+                role: 'error', 
+                content: error instanceof Error ? error.message : "Failed to get AI response. Please try again." 
+            };
+            setMessages(prev => [...prev, errorMessage]);
         } finally {
             setIsLoading(false);
         }
@@ -46,17 +68,33 @@ export default function ChatInterface() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    const clearChat = () => {
+        setMessages([]);
+    };
+
     return (
         <div className="w-full max-w-2xl mx-auto mt-8 bg-gray-900 rounded-xl shadow-xl border border-gray-800 overflow-hidden flex flex-col h-150">
-            <div className="p-4 border-b border-gray-800 bg-gray-900/50 flex items-center gap-2">
-                <Bot className="w-5 h-5 text-blue-400" />
-                <h2 className="font-semibold text-white">Ask your Documents</h2>
+            <div className="p-4 border-b border-gray-800 bg-gray-900/50 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <Bot className="w-5 h-5 text-blue-400" />
+                    <h2 className="font-semibold text-white">Ask your Documents</h2>
+                </div>
+                {messages.length > 0 && (
+                    <button
+                        onClick={clearChat}
+                        className="text-xs text-gray-400 hover:text-white transition-colors"
+                    >
+                        Clear Chat
+                    </button>
+                )}
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-950">
                 {messages.length === 0 && (
                     <div className="text-center text-gray-500 mt-20">
-                        <p>Upload a document, ask a question, or <b className="text-gray-400">click a node in the graph!</b></p>
+                        <Bot className="w-12 h-12 mx-auto mb-3 text-gray-600" />
+                        <p>Upload a document and ask questions</p>
+                        <p className="text-xs mt-1">or <b className="text-gray-400">click a node in the graph</b></p>
                     </div>
                 )}
                 
@@ -67,9 +105,16 @@ export default function ChatInterface() {
                                 <Bot className="w-5 h-5 text-blue-400" />
                             </div>
                         )}
+                        {msg.role === 'error' && (
+                            <div className="w-8 h-8 rounded-full bg-red-950/50 flex items-center justify-center shrink-0">
+                                <AlertCircle className="w-5 h-5 text-red-400" />
+                            </div>
+                        )}
                         <div className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${
                             msg.role === 'user' 
                                 ? 'bg-blue-600 text-white rounded-br-none' 
+                                : msg.role === 'error'
+                                ? 'bg-red-900/30 text-red-200 border border-red-800 rounded-bl-none'
                                 : 'bg-gray-800 text-gray-100 rounded-bl-none'
                         }`}>
                             {msg.content}
@@ -91,6 +136,7 @@ export default function ChatInterface() {
                         </div>
                     </div>
                 )}
+                <div ref={messagesEndRef} />
             </div>
 
             <form onSubmit={(e) => { e.preventDefault(); handleSend(query); }} className="p-4 border-t border-gray-800 bg-gray-900">
@@ -103,7 +149,11 @@ export default function ChatInterface() {
                         className="flex-1 px-4 py-2 border border-gray-700 bg-gray-800 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-500"
                         disabled={isLoading}
                     />
-                    <button type="submit" disabled={isLoading || !query.trim()} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                    <button 
+                        type="submit" 
+                        disabled={isLoading || !query.trim()} 
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
                         <Send className="w-5 h-5" />
                     </button>
                 </div>
