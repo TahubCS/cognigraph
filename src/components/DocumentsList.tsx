@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { FileText, Loader2, Trash2, CheckCircle, Clock, XCircle } from 'lucide-react';
+import { FileText, Loader2, Trash2, CheckCircle, Clock, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getDocuments, deleteDocument } from '@/actions/documents';
-import toast from 'react-hot-toast'; // 1. Add Toast import
+import toast from 'react-hot-toast';
 
 type Document = {
     id: string;
@@ -16,19 +16,26 @@ export default function DocumentList() {
     const [documents, setDocuments] = useState<Document[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [deletingId, setDeletingId] = useState<string | null>(null);
+    
+    // Pagination State
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const PAGE_SIZE = 5;
 
     const loadDocuments = useCallback(async (isBackground = false) => {
         if (!isBackground) setIsLoading(true);
         
         try {
-            const docs = await getDocuments();
+            // Updated to use the new return structure
+            const { documents: docs, totalPages: total } = await getDocuments(page, PAGE_SIZE);
             setDocuments(docs);
+            setTotalPages(total);
         } catch (error) {
             console.error("Failed to load documents:", error);
         } finally {
             if (!isBackground) setIsLoading(false);
         }
-    }, []);
+    }, [page]); // Re-run when page changes
 
     // Initial Load & Event Listener
     useEffect(() => {
@@ -37,7 +44,12 @@ export default function DocumentList() {
         load();
 
         const handleFileUploaded = () => {
-            loadDocuments(true); 
+            // If on page 1, refresh. If not, go to page 1 to see new file.
+            if (page === 1) {
+                loadDocuments(true);
+            } else {
+                setPage(1);
+            }
         };
 
         window.addEventListener('file-uploaded', handleFileUploaded);
@@ -45,7 +57,7 @@ export default function DocumentList() {
             isMounted = false;
             window.removeEventListener('file-uploaded', handleFileUploaded);
         };
-    }, [loadDocuments]);
+    }, [loadDocuments, page]);
 
     // Polling Effect (Checks periodically if files are processing)
     useEffect(() => {
@@ -61,24 +73,15 @@ export default function DocumentList() {
         }
     }, [documents, loadDocuments]);
 
-    // 🆕 AUTO-CLEANUP EFFECT
-    // This watches for 'FAILED' documents, deletes them, and notifies the user.
+    // Auto-cleanup failed docs
     useEffect(() => {
         const failedDocs = documents.filter(doc => doc.status === 'FAILED');
         
         if (failedDocs.length > 0) {
             failedDocs.forEach(async (doc) => {
                 console.log(`❌ Cleanup: Removing failed document ${doc.filename}`);
-                
-                // 1. Notify User
                 toast.error(`Processing failed for "${doc.filename}". Removing file.`);
-
-                // 2. Delete from Server
-                // We use a fire-and-forget approach here for the server call
-                // but immediately update UI to remove the red error row.
                 await deleteDocument(doc.id);
-
-                // 3. Update Local State to remove the failed item
                 setDocuments(prev => prev.filter(d => d.id !== doc.id));
             });
         }
@@ -92,7 +95,8 @@ export default function DocumentList() {
         
         if (result.success) {
             toast.success("Document deleted");
-            setDocuments(prev => prev.filter(doc => doc.id !== id));
+            // Reload to ensure pagination count updates correctly
+            loadDocuments();
         } else {
             toast.error(`Failed to delete: ${result.error}`);
         }
@@ -102,16 +106,11 @@ export default function DocumentList() {
 
     const getStatusIcon = (status: string) => {
         switch (status) {
-            case 'COMPLETED':
-                return <CheckCircle className="w-4 h-4 text-green-400" />;
-            case 'PROCESSING':
-                return <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />;
-            case 'PENDING':
-                return <Clock className="w-4 h-4 text-yellow-400" />;
-            case 'FAILED': // This icon might flicker briefly before auto-deletion
-                return <XCircle className="w-4 h-4 text-red-400" />;
-            default:
-                return <Clock className="w-4 h-4 text-gray-400" />;
+            case 'COMPLETED': return <CheckCircle className="w-4 h-4 text-green-400" />;
+            case 'PROCESSING': return <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />;
+            case 'PENDING': return <Clock className="w-4 h-4 text-yellow-400" />;
+            case 'FAILED': return <XCircle className="w-4 h-4 text-red-400" />;
+            default: return <Clock className="w-4 h-4 text-gray-400" />;
         }
     };
 
@@ -180,6 +179,31 @@ export default function DocumentList() {
                             </button>
                         </div>
                     ))}
+                </div>
+            )}
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-800">
+                    <button
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        disabled={page === 1 || isLoading}
+                        className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    
+                    <span className="text-xs text-gray-500 font-medium">
+                        Page {page} of {totalPages}
+                    </span>
+
+                    <button
+                        onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                        disabled={page === totalPages || isLoading}
+                        className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <ChevronRight className="w-4 h-4" />
+                    </button>
                 </div>
             )}
         </div>

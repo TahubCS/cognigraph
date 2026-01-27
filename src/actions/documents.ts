@@ -4,7 +4,6 @@ import { Client } from 'pg';
 import { auth } from '@clerk/nextjs/server';
 import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
-// Initialize S3 Client (Same config as storage.ts)
 const s3Client = new S3Client({
     region: process.env.AWS_REGION!,
     credentials: {
@@ -13,11 +12,12 @@ const s3Client = new S3Client({
     },
 });
 
-export async function getDocuments() {
+// UPDATED: Now accepts pagination parameters
+export async function getDocuments(page: number = 1, limit: number = 5) {
     const { userId } = await auth();
     
     if (!userId) {
-        return [];
+        return { documents: [], totalPages: 0 };
     }
 
     const client = new Client({
@@ -26,19 +26,36 @@ export async function getDocuments() {
 
     try {
         await client.connect();
+        
+        const offset = (page - 1) * limit;
 
+        // 1. Get Total Count (for pagination UI)
+        const countResult = await client.query(`
+            SELECT COUNT(*) as count 
+            FROM documents 
+            WHERE user_id = $1
+        `, [userId]);
+        
+        const totalDocs = parseInt(countResult.rows[0].count);
+        const totalPages = Math.ceil(totalDocs / limit);
+
+        // 2. Get Paginated Documents
         const result = await client.query(`
             SELECT id, filename, status, created_at
             FROM documents
             WHERE user_id = $1
             ORDER BY created_at DESC
-        `, [userId]);
+            LIMIT $2 OFFSET $3
+        `, [userId, limit, offset]);
 
-        return result.rows;
+        return { 
+            documents: result.rows, 
+            totalPages: totalPages > 0 ? totalPages : 1 
+        };
 
     } catch (error) {
         console.error("Failed to fetch documents:", error);
-        return [];
+        return { documents: [], totalPages: 0 };
     } finally {
         await client.end();
     }
@@ -83,8 +100,6 @@ export async function deleteDocument(documentId: string) {
                 console.log(`🗑️ S3: Deleted object ${fileKey}`);
             } catch (s3Error) {
                 console.error(`⚠️ S3 Delete Warning: Could not delete ${fileKey}`, s3Error);
-                // We continue to delete the DB record so the UI doesn't get stuck, 
-                // but we log this for admin review.
             }
         }
 
@@ -95,10 +110,6 @@ export async function deleteDocument(documentId: string) {
         `, [documentId, userId]);
 
         console.log(`🗑️ DB: Deleted document record ${documentId} (${filename})`);
-        
-        // 4. (Optional) Cleanup Embeddings/Nodes?
-        // Depending on your DB schema 'ON DELETE CASCADE', this might happen automatically.
-        // If not, you might need to manually delete from 'embeddings' and 'nodes' tables here too.
         
         return { success: true };
 
