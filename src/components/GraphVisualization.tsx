@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { getGraphData } from '@/actions/graph';
 import { Loader2, RefreshCw, Filter } from 'lucide-react';
 import ErrorMessage from './ErrorMessage';
+import NodeDetailsPanel from './NodeDetailsPanels';
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), { 
     ssr: false,
@@ -15,13 +16,36 @@ const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
     )
 });
 
+type GraphNode = {
+    id: string;
+    name: string;
+    group: string;
+    document: string;
+    val: number;
+    x?: number;
+    y?: number;
+};
+
+type GraphData = {
+    nodes: GraphNode[];
+    links: Array<{
+        source: string;
+        target: string;
+        label: string;
+    }>;
+    documents: string[];
+    types: string[];
+};
+
 export default function GraphVisualization() {
-    const [data, setData] = useState({ nodes: [], links: [], documents: [], types: [] });
+    const [data, setData] = useState<GraphData>({ nodes: [], links: [], documents: [], types: [] });
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [documentFilter, setDocumentFilter] = useState<string>('all');
     const [typeFilter, setTypeFilter] = useState<string>('all');
     const [showFilters, setShowFilters] = useState(false);
+    const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+    const [selectedNodeName, setSelectedNodeName] = useState<string | null>(null);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const graphRef = useRef<any>(null);
 
@@ -35,8 +59,7 @@ export default function GraphVisualization() {
                 typeFilter === 'all' ? undefined : typeFilter
             );
             console.log('🎨 Graph Data Loaded:', graphData);
-            // @ts-expect-error: DB types mismatch is expected in demo
-            setData(graphData);
+            setData(graphData as GraphData);
         } catch (err) {
             console.error('Graph loading error:', err);
             setError(err instanceof Error ? err.message : 'Failed to load graph data');
@@ -165,11 +188,13 @@ export default function GraphVisualization() {
                         width={800}
                         height={500}
                         onNodeClick={node => {
-                            const event = new CustomEvent('graph-node-click', { detail: node.name });
-                            window.dispatchEvent(event);
+                            // Show details panel
+                            setSelectedNodeId(String(node.id));
+                            setSelectedNodeName(String(node.name));
                             
+                            // Center and zoom on node
                             graphRef.current?.centerAt(node.x, node.y, 1000);
-                            graphRef.current?.zoom(4, 1000);
+                            graphRef.current?.zoom(3, 1000);
                         }}
                         backgroundColor="#030712"
                     />
@@ -197,6 +222,27 @@ export default function GraphVisualization() {
                     onDismiss={() => setError(null)}
                 />
             )}
+
+            {/* Node Details Panel */}
+            <NodeDetailsPanel
+                nodeId={selectedNodeId}
+                nodeName={selectedNodeName}
+                onClose={() => {
+                    setSelectedNodeId(null);
+                    setSelectedNodeName(null);
+                }}
+                onNodeClick={(nodeId: string, nodeName: string) => {
+                    setSelectedNodeId(nodeId);
+                    setSelectedNodeName(nodeName);
+                    
+                    // Find and center on the new node
+                    const node = data.nodes.find((n: GraphNode) => n.id === nodeId);
+                    if (node && node.x !== undefined && node.y !== undefined && graphRef.current) {
+                        graphRef.current.centerAt(node.x, node.y, 1000);
+                        graphRef.current.zoom(3, 1000);
+                    }
+                }}
+            />
         </div>
     );
 }
