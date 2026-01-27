@@ -3,14 +3,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Send, Bot, AlertCircle, Loader2, Download } from 'lucide-react';
 import { exportChatAsMarkdown, exportChatAsPDF } from '@/lib/export-utils';
-import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'; // 1. Import Virtuoso
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 
 type Message = {
     role: 'user' | 'assistant';
     content: string;
     id: string;
     sources?: Array<{
-        id: number;
+        id?: number; // Made optional since it might be missing
         filename: string;
         similarity: string;
         preview: string;
@@ -23,12 +23,8 @@ export default function ChatInterface() {
     const [isLoading, setIsLoading] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     
-    // 2. Change ref type to VirtuosoHandle
     const virtuosoRef = useRef<VirtuosoHandle>(null);
     const inputRef = useRef<HTMLInputElement>(null);
-
-    // 3. REMOVED: The manual useEffect scrollToBottom logic. 
-    // Virtuoso handles this automatically via 'followOutput'.
 
     // Focus input after loading completes
     useEffect(() => {
@@ -48,7 +44,6 @@ export default function ChatInterface() {
             content: input.trim()
         };
 
-        // Virtuoso will automatically stick to bottom because of followOutput="auto"
         setMessages(prev => [...prev, userMessage]);
         setInput('');
         setIsLoading(true);
@@ -196,10 +191,8 @@ export default function ChatInterface() {
         setErrorMessage(null);
     };
 
-    // 4. Extract Row Rendering for Virtuoso
-    // This function renders a single chat message
     const renderMessage = (index: number, msg: Message) => (
-        <div className="px-4 py-2"> {/* Wrapper for spacing */}
+        <div className="px-4 py-2">
             <div className="flex flex-col gap-2">
                 <div className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     {msg.role === 'assistant' && (
@@ -232,8 +225,9 @@ export default function ChatInterface() {
                                 {msg.sources.length} source{msg.sources.length > 1 ? 's' : ''} used
                             </summary>
                             <div className="px-3 pb-3 pt-1 space-y-2">
-                                {msg.sources.map((source) => (
-                                    <div key={`${msg.id}-source-${source.id}`} className="bg-gray-900/50 rounded p-2 text-xs border border-gray-800">
+                                {/* FIXED: Using 'idx' as key to guarantee uniqueness */}
+                                {msg.sources.map((source, idx) => (
+                                    <div key={`${msg.id}-source-${idx}`} className="bg-gray-900/50 rounded p-2 text-xs border border-gray-800">
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="text-blue-400 font-medium truncate max-w-[70%]">{source.filename}</span>
                                             <span className="text-green-400 shrink-0">{source.similarity}%</span>
@@ -278,7 +272,7 @@ export default function ChatInterface() {
                 </div>
             </div>
 
-            {/* Chat Area - Replaced with Virtuoso */}
+            {/* Chat Area */}
             <div className="flex-1 bg-gray-950 overflow-hidden"> 
                 {messages.length === 0 && !errorMessage ? (
                     <div className="h-full flex flex-col items-center justify-center text-gray-500">
@@ -291,7 +285,6 @@ export default function ChatInterface() {
                         ref={virtuosoRef}
                         data={messages}
                         itemContent={renderMessage}
-                        // 5. 'auto' mode sticks to bottom ONLY if user is already at bottom
                         followOutput="auto"
                         initialTopMostItemIndex={messages.length - 1}
                         className="scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent h-full"
