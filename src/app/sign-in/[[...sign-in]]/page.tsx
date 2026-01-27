@@ -1,13 +1,13 @@
 'use client';
 
-import { SignUp } from "@clerk/nextjs";
+import { SignIn } from "@clerk/nextjs";
 import Link from "next/link";
 import { dark } from "@clerk/themes";
 import { motion } from "framer-motion";
 import { ArrowLeft} from "lucide-react";
 import { BiLogoGraphql } from "react-icons/bi";
 
-// --- COMPONENTS ---
+// --- COMPONENTS (Shared Design) ---
 
 function AuthNavbar() {
     return (
@@ -25,7 +25,7 @@ function AuthNavbar() {
                 </span>
             </Link>
 
-            {/* Back to Site (Optional explicit button) */}
+            {/* Back to Site */}
             <Link 
                 href="/"
                 className="hidden sm:flex items-center gap-2 text-sm text-zinc-400 hover:text-white transition-colors"
@@ -40,9 +40,9 @@ function AuthNavbar() {
 function GridBackground() {
     return (
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            {/* Gradient Mesh */}
-            <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-blue-600/10 rounded-full blur-[120px]" />
-            <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-purple-600/10 rounded-full blur-[120px]" />
+            {/* Gradient Mesh - Slightly different positions for variety if desired */}
+            <div className="absolute top-[-20%] right-[-10%] w-[50%] h-[50%] bg-blue-600/10 rounded-full blur-[120px]" />
+            <div className="absolute bottom-[-20%] left-[-10%] w-[50%] h-[50%] bg-purple-600/10 rounded-full blur-[120px]" />
             
             {/* Grid Pattern */}
             <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-size-[24px_24px]" />
@@ -55,15 +55,15 @@ function GridBackground() {
 
 // --- MAIN PAGE ---
 
-export default function SignUpPage() {
+export default function SignInPage() {
     return (
         <main className="relative min-h-screen w-full bg-[#09090b] flex flex-col items-center justify-center p-4">
             
-            {/* 1. Navigation & Background */}
+            {/* Navigation & Background */}
             <AuthNavbar />
             <GridBackground />
 
-            {/* 2. The Form Container */}
+            {/* Form Container */}
             <motion.div 
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -71,15 +71,14 @@ export default function SignUpPage() {
                 className="relative z-10 w-full max-w-md"
             >
                 <div className="mb-8 text-center">
-                    <h1 className="text-2xl font-bold text-white mb-2">Create your account</h1>
+                    <h1 className="text-2xl font-bold text-white mb-2">Welcome back</h1>
                     <p className="text-zinc-400 text-sm">
-                        Join the workspace for intelligent document analysis.
+                        Enter your credentials to access your workspace.
                     </p>
                 </div>
 
-                {/* 3. Styled Clerk Component */}
                 <div className="flex justify-center">
-                    <SignUp 
+                    <SignIn 
                         appearance={{
                             // 2. Use the official Dark Theme as a base (Fixes GitHub Icon)
                             baseTheme: dark,
