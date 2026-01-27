@@ -8,6 +8,7 @@ from dotenv import load_dotenv # type: ignore
 from openai import OpenAI # type: ignore
 import pypdf # type: ignore
 import io
+import base64
 
 # Load environment variables
 load_dotenv(dotenv_path="../.env.local")
@@ -42,27 +43,75 @@ def download_from_s3(file_key):
         print(f"❌ S3 Error: {e}")
         raise e
 
+def get_image_description(image_bytes, source_info="image"):
+    """
+    Sends image to GPT-4o-mini to get a detailed text description.
+    """
+    print(f"👁️ analyzing visual content from {source_info}...")
+    try:
+        base64_image = base64.b64encode(image_bytes).decode('utf-8')
+        
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Describe this image in detail for a knowledge base. If it contains text, charts, or diagrams, transcribe and summarize them accurately."},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}",
+                                "detail": "low" # Use 'high' if you need absolute precision, 'low' is cheaper/faster
+                            },
+                        },
+                    ],
+                }
+            ],
+            max_tokens=1000
+        )
+        return f"\n[IMAGE DESCRIPTION START ({source_info})]\n{response.choices[0].message.content}\n[IMAGE DESCRIPTION END]\n"
+    except Exception as e:
+        print(f"⚠️ Vision Error: {e}")
+        return ""
+
 def extract_text_from_file(file_bytes, file_key):
-    print(f"📄 Extracting text from {file_key}...")
+    print(f"📄 Extracting content from {file_key}...")
+    file_ext = file_key.lower().split('.')[-1]
     
-    # Check if it's a PDF
-    if file_key.lower().endswith('.pdf'):
+    # 1. Handle PDF (Text + Embedded Images)
+    if file_ext == 'pdf':
         try:
             pdf_reader = pypdf.PdfReader(io.BytesIO(file_bytes))
             text = ""
-            for page in pdf_reader.pages:
-                text += page.extract_text() + "\n"
+            
+            for page_num, page in enumerate(pdf_reader.pages):
+                # Extract Text
+                page_text = page.extract_text() or ""
+                text += page_text + "\n"
+                
+                # Extract Images from Page
+                # We filter small images to avoid processing icons/logos
+                for img_index, img in enumerate(page.images):
+                    if len(img.data) > 5000: # Only process images > 5KB
+                        print(f"   found image on page {page_num+1}...")
+                        desc = get_image_description(img.data, f"Page {page_num+1} Image {img_index+1}")
+                        text += desc
+
             return text
         except Exception as e:
             print(f"⚠️ PDF Error: {e}")
             return ""
+
+    # 2. Handle Standalone Images
+    elif file_ext in ['jpg', 'jpeg', 'png', 'webp']:
+        return get_image_description(file_bytes, f"Uploaded File: {file_key}")
             
-    # Otherwise, assume it's a Text file
+    # 3. Handle Plain Text
     else:
         try:
             return file_bytes.decode('utf-8')
         except UnicodeDecodeError:
-            # Fallback for weird text encodings
             return file_bytes.decode('latin-1')
 
 def chunk_text(text, chunk_size=1000, overlap=200):
@@ -159,7 +208,7 @@ def process_file_logic(file_key: str, document_id: str):
         # 2. Download from S3
         file_bytes = download_from_s3(file_key)
         
-        # 3. Extract Text (Smartly handling PDF or TXT)
+        # 3. Extract Text (Smartly handling PDF, Images, or TXT)
         full_text = extract_text_from_file(file_bytes, file_key)
         
         if not full_text.strip():

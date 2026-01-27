@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Upload, Loader2, CheckCircle, FileText, X } from 'lucide-react';
+import { Upload, Loader2, CheckCircle, FileText, X, Image as ImageIcon } from 'lucide-react'; // Added ImageIcon
 import { getPresignedUrl, triggerProcessing } from '@/actions/storage';
 import { deleteDocument } from '@/actions/documents';
 import toast from 'react-hot-toast';
@@ -15,14 +15,21 @@ export default function FileUpload() {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
     const validateFile = (file: File): { valid: boolean; error?: string } => {
-        const maxSize = 5 * 1024 * 1024; // 5MB
+        const maxSize = 10 * 1024 * 1024; // Increased to 10MB for high-res images
         if (file.size > maxSize) {
-            return { valid: false, error: "File too large (max 5MB)" };
+            return { valid: false, error: "File too large (max 10MB)" };
         }
 
-        const allowedTypes = ['application/pdf', 'text/plain'];
+        const allowedTypes = [
+            'application/pdf', 
+            'text/plain', 
+            'image/jpeg', 
+            'image/png', 
+            'image/webp'
+        ];
+        
         if (!allowedTypes.includes(file.type)) {
-            return { valid: false, error: "Invalid file type. Only PDF and TXT files are allowed." };
+            return { valid: false, error: "Invalid file type. Only PDF, TXT, and Images (JPG/PNG) are allowed." };
         }
 
         return { valid: true };
@@ -107,7 +114,7 @@ export default function FileUpload() {
             }
 
             // Step 3: Trigger AI processing
-            toast.loading("Starting AI processing...", { id: toastId });
+            toast.loading("Starting AI analysis...", { id: toastId });
             const processingResult = await triggerProcessing(fileKey, documentId);
             
             if (!processingResult.success) {
@@ -153,6 +160,17 @@ export default function FileUpload() {
         }
     };
 
+    // Helper to determine icon based on file type
+    const getFileIcon = (file: File | null, fileName: string | null) => {
+        const name = file ? file.name : fileName;
+        if (!name) return <Upload className="w-8 h-8 text-blue-400" />;
+
+        if (name.match(/\.(jpg|jpeg|png|webp)$/i)) {
+            return <ImageIcon className="w-8 h-8 text-purple-400" />;
+        }
+        return <FileText className="w-8 h-8 text-green-400" />;
+    };
+
     return (
         <div className="w-full max-w-md mx-auto space-y-4">
             <div className="p-6 bg-gray-900 rounded-xl shadow-xl border border-gray-800">
@@ -181,7 +199,7 @@ export default function FileUpload() {
                             {isUploading ? (
                                 <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
                             ) : selectedFile ? (
-                                <FileText className="w-8 h-8 text-green-400" />
+                                getFileIcon(selectedFile, null)
                             ) : lastUploadedFile ? (
                                 <CheckCircle className="w-8 h-8 text-green-400" />
                             ) : (
@@ -206,7 +224,7 @@ export default function FileUpload() {
                                     )}
                                 </div>
                                 <p className="text-xs text-gray-400">
-                                    {(selectedFile.size / 1024).toFixed(1)} KB
+                                    {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
                                 </p>
                             </div>
                         ) : (
@@ -217,7 +235,7 @@ export default function FileUpload() {
                                 <p className="text-sm text-gray-400 mt-1">
                                     {isDragging ? 'Release to upload' : 'Drag & drop or click to browse'}
                                 </p>
-                                <p className="text-xs text-gray-500 mt-1">PDF or TXT (Max 5MB)</p>
+                                <p className="text-xs text-gray-500 mt-1">PDF, TXT, JPG, PNG (Max 10MB)</p>
                             </div>
                         )}
 
@@ -243,7 +261,7 @@ export default function FileUpload() {
                                     id="file-input"
                                     type="file" 
                                     className="hidden" 
-                                    accept="application/pdf,text/plain"
+                                    accept="application/pdf,text/plain,image/jpeg,image/png,image/webp"
                                     onChange={handleFileInputChange}
                                     disabled={isUploading}
                                 />
@@ -268,6 +286,10 @@ export default function FileUpload() {
                     <div className="flex items-center gap-1">
                         <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                         <span>TXT</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                        <span>IMG</span>
                     </div>
                 </div>
             </div>
