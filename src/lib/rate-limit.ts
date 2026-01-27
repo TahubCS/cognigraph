@@ -9,7 +9,7 @@ const redis = new Redis({
 // File Upload Rate Limiter - 10 uploads per 30 minutes
 export const uploadRateLimiter = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(10, "30 m"),
+    limiter: Ratelimit.slidingWindow(10, "30 m"), // "30 m" = 30 Minutes
     analytics: true,
     prefix: "@upstash/ratelimit/upload",
 });
@@ -17,7 +17,7 @@ export const uploadRateLimiter = new Ratelimit({
 // Chat Rate Limiter - 50 messages per 30 minutes
 export const chatRateLimiter = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(50, "30 m"),
+    limiter: Ratelimit.slidingWindow(50, "30 m"), // "30 m" = 30 Minutes
     analytics: true,
     prefix: "@upstash/ratelimit/chat",
 });
@@ -25,7 +25,7 @@ export const chatRateLimiter = new Ratelimit({
 // Graph Data Rate Limiter - 100 requests per 30 minutes
 export const graphRateLimiter = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(100, "30 m"),
+    limiter: Ratelimit.slidingWindow(100, "30 m"), // "30 m" = 30 Minutes
     analytics: true,
     prefix: "@upstash/ratelimit/graph",
 });

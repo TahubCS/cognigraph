@@ -26,7 +26,6 @@ export default function DocumentList() {
         if (!isBackground) setIsLoading(true);
         
         try {
-            // Updated to use the new return structure
             const { documents: docs, totalPages: total } = await getDocuments(page, PAGE_SIZE);
             setDocuments(docs);
             setTotalPages(total);
@@ -35,7 +34,7 @@ export default function DocumentList() {
         } finally {
             if (!isBackground) setIsLoading(false);
         }
-    }, [page]); // Re-run when page changes
+    }, [page]);
 
     // Initial Load & Event Listener
     useEffect(() => {
@@ -44,7 +43,6 @@ export default function DocumentList() {
         load();
 
         const handleFileUploaded = () => {
-            // If on page 1, refresh. If not, go to page 1 to see new file.
             if (page === 1) {
                 loadDocuments(true);
             } else {
@@ -95,7 +93,6 @@ export default function DocumentList() {
         
         if (result.success) {
             toast.success("Document deleted");
-            // Reload to ensure pagination count updates correctly
             loadDocuments();
         } else {
             toast.error(`Failed to delete: ${result.error}`);
@@ -110,7 +107,7 @@ export default function DocumentList() {
             case 'PROCESSING': return <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />;
             case 'PENDING': return <Clock className="w-4 h-4 text-yellow-400" />;
             case 'FAILED': return <XCircle className="w-4 h-4 text-red-400" />;
-            default: return <Clock className="w-4 h-4 text-gray-400" />;
+            default: return <Clock className="w-4 h-4 text-zinc-400" />;
         }
     };
 
@@ -120,91 +117,80 @@ export default function DocumentList() {
             case 'PROCESSING': return 'text-blue-400';
             case 'PENDING': return 'text-yellow-400';
             case 'FAILED': return 'text-red-400';
-            default: return 'text-gray-400';
+            default: return 'text-zinc-400';
         }
     };
 
     return (
-        <div className="w-full max-w-md mx-auto bg-gray-900 rounded-xl shadow-xl border border-gray-800 p-6">
-            <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                    <FileText className="w-5 h-5 text-blue-400" />
-                    Your Documents
-                </h3>
-                <button
-                    onClick={() => loadDocuments(false)}
-                    disabled={isLoading}
-                    className="text-xs text-gray-400 hover:text-white transition-colors disabled:opacity-50"
-                >
-                    {isLoading ? 'Loading...' : 'Refresh'}
-                </button>
-            </div>
-
+        <div className="w-full h-full flex flex-col min-h-0">
             {isLoading && documents.length === 0 ? (
-                <div className="flex items-center justify-center py-8">
+                <div className="flex items-center justify-center flex-1">
                     <Loader2 className="w-6 h-6 text-blue-400 animate-spin" />
                 </div>
             ) : documents.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                    <FileText className="w-12 h-12 mx-auto mb-2 text-gray-600" />
-                    <p className="text-sm">No documents uploaded yet</p>
+                <div className="flex flex-col items-center justify-center flex-1 text-zinc-500">
+                    <FileText className="w-10 h-10 mb-2 text-zinc-700" />
+                    <p className="text-xs">No documents yet</p>
                 </div>
             ) : (
-                <div className="space-y-2">
-                    {documents.map((doc) => (
-                        <div
-                            key={doc.id}
-                            className="flex items-center justify-between p-3 bg-gray-800 rounded-lg hover:bg-gray-750 transition-colors"
-                        >
-                            <div className="flex items-center gap-3 flex-1 min-w-0">
-                                {getStatusIcon(doc.status)}
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm text-white truncate">{doc.filename}</p>
-                                    <p className={`text-xs ${getStatusColor(doc.status)}`}>
-                                        {doc.status}
-                                    </p>
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => handleDelete(doc.id, doc.filename)}
-                                disabled={deletingId === doc.id}
-                                className="p-2 text-gray-400 hover:text-red-400 transition-colors disabled:opacity-50"
-                                title="Delete document"
+                <>
+                    {/* Documents Container - Fixed height for 5 items */}
+                    <div className="space-y-2 shrink-0">
+                        {documents.map((doc) => (
+                            <div
+                                key={doc.id}
+                                className="flex items-center justify-between p-2.5 bg-zinc-800/50 hover:bg-zinc-800 rounded-lg transition-colors border border-zinc-800/50"
                             >
-                                {deletingId === doc.id ? (
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                    <Trash2 className="w-4 h-4" />
-                                )}
+                                <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                                    {getStatusIcon(doc.status)}
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs text-zinc-100 truncate font-medium">{doc.filename}</p>
+                                        <p className={`text-[10px] ${getStatusColor(doc.status)} uppercase font-medium tracking-wide`}>
+                                            {doc.status}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => handleDelete(doc.id, doc.filename)}
+                                    disabled={deletingId === doc.id}
+                                    className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-950/20 rounded transition-colors disabled:opacity-50 shrink-0"
+                                    title="Delete document"
+                                >
+                                    {deletingId === doc.id ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        <Trash2 className="w-4 h-4" />
+                                    )}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Pagination Controls - Only show if needed */}
+                    {totalPages > 1 && (
+                        <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-zinc-800/50 shrink-0">
+                            <button
+                                onClick={() => setPage(p => Math.max(1, p - 1))}
+                                disabled={page === 1 || isLoading}
+                                className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <ChevronLeft className="w-4 h-4" />
+                            </button>
+                            
+                            <span className="text-[10px] text-zinc-500 font-medium">
+                                {page} / {totalPages}
+                            </span>
+
+                            <button
+                                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                disabled={page === totalPages || isLoading}
+                                className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <ChevronRight className="w-4 h-4" />
                             </button>
                         </div>
-                    ))}
-                </div>
-            )}
-
-            {/* Pagination Controls */}
-            {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-800">
-                    <button
-                        onClick={() => setPage(p => Math.max(1, p - 1))}
-                        disabled={page === 1 || isLoading}
-                        className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                    >
-                        <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    
-                    <span className="text-xs text-gray-500 font-medium">
-                        Page {page} of {totalPages}
-                    </span>
-
-                    <button
-                        onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                        disabled={page === totalPages || isLoading}
-                        className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                    >
-                        <ChevronRight className="w-4 h-4" />
-                    </button>
-                </div>
+                    )}
+                </>
             )}
         </div>
     );

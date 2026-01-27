@@ -1,13 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { Upload, Loader2, CheckCircle, FileText, X, Image as ImageIcon } from 'lucide-react'; // Added ImageIcon
+import { Upload, Loader2, CheckCircle, FileText, X, Image as ImageIcon, Code } from 'lucide-react';
 import { getPresignedUrl, triggerProcessing } from '@/actions/storage';
 import { deleteDocument } from '@/actions/documents';
 import toast from 'react-hot-toast';
 import ErrorMessage from './ErrorMessage';
+import { useMode } from './ModeContext';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function FileUpload() {
+    const { activeMode } = useMode();
     const [isUploading, setIsUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [lastUploadedFile, setLastUploadedFile] = useState<string | null>(null);
@@ -15,21 +18,31 @@ export default function FileUpload() {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
     const validateFile = (file: File): { valid: boolean; error?: string } => {
-        const maxSize = 10 * 1024 * 1024; // Increased to 10MB for high-res images
+        const maxSize = 10 * 1024 * 1024;
         if (file.size > maxSize) {
             return { valid: false, error: "File too large (max 10MB)" };
         }
 
-        const allowedTypes = [
-            'application/pdf', 
-            'text/plain', 
-            'image/jpeg', 
-            'image/png', 
-            'image/webp'
+        const allowedMimes = [
+            'application/pdf', 'text/plain', 'image/jpeg', 'image/png', 
+            'image/webp', 'application/json', 'text/markdown'
         ];
-        
-        if (!allowedTypes.includes(file.type)) {
-            return { valid: false, error: "Invalid file type. Only PDF, TXT, and Images (JPG/PNG) are allowed." };
+
+        const allowedExtensions = [
+            '.ts', '.tsx', '.js', '.jsx', '.py', '.java', '.c', '.cpp', 
+            '.h', '.cs', '.go', '.rs', '.rb', '.php', '.html', '.css', 
+            '.sql', '.yaml', '.yml', '.json', '.md', '.txt'
+        ];
+
+        const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+        const isValidMime = allowedMimes.includes(file.type);
+        const isValidExtension = allowedExtensions.includes(fileExtension);
+
+        if (!isValidMime && !isValidExtension) {
+            return { 
+                valid: false, 
+                error: "Invalid file type. Supported: PDF, Images, Text, and Code." 
+            };
         }
 
         return { valid: true };
@@ -37,13 +50,11 @@ export default function FileUpload() {
 
     const handleFileSelection = (file: File) => {
         setUploadError(null);
-        
         const validation = validateFile(file);
         if (!validation.valid) {
             toast.error(validation.error!);
             return;
         }
-
         setSelectedFile(file);
     };
 
@@ -75,21 +86,22 @@ export default function FileUpload() {
         if (file) {
             handleFileSelection(file);
         }
-        event.target.value = ''; // Reset input
+        event.target.value = ''; 
     };
 
     const uploadFile = async () => {
         if (!selectedFile || isUploading) return;
 
         setIsUploading(true);
-        const toastId = toast.loading("Initializing upload...");
-
+        const toastId = toast.loading(`Uploading to ${activeMode.toUpperCase()} workspace...`);
         let currentDocumentId: string | null = null;
 
         try {
-            // Step 1: Get presigned URL
-            toast.loading("Getting upload URL...", { id: toastId });
-            const { success, url, fileKey, documentId, error, rateLimitError, resetAt } = await getPresignedUrl(selectedFile.name, selectedFile.type);
+            const { success, url, fileKey, documentId, error, rateLimitError, resetAt } = await getPresignedUrl(
+                selectedFile.name, 
+                selectedFile.type || 'text/plain', 
+                activeMode
+            );
 
             if (!success || !url || !documentId) {
                 if (rateLimitError && resetAt) {
@@ -101,8 +113,7 @@ export default function FileUpload() {
 
             currentDocumentId = documentId;
 
-            // Step 2: Upload to S3
-            toast.loading(`Uploading "${selectedFile.name}"...`, { id: toastId });
+            toast.loading(`Sending "${selectedFile.name}" to cloud...`, { id: toastId });
             
             const uploadResponse = await fetch(url, {
                 method: "PUT",
@@ -113,19 +124,16 @@ export default function FileUpload() {
                 throw new Error(`Upload failed: ${uploadResponse.status}`);
             }
 
-            // Step 3: Trigger AI processing
-            toast.loading("Starting AI analysis...", { id: toastId });
+            toast.loading("Starting specialized analysis...", { id: toastId });
             const processingResult = await triggerProcessing(fileKey, documentId);
             
             if (!processingResult.success) {
                 throw new Error("AI processing failed to start");
             }
 
-            // Success!
-            toast.success(`"${selectedFile.name}" uploaded successfully!`, { id: toastId });
+            toast.success(`Upload complete!`, { id: toastId });
             setLastUploadedFile(selectedFile.name);
             setSelectedFile(null);
-            console.log("✅ File uploaded successfully:", fileKey);
             
             window.dispatchEvent(new CustomEvent('file-uploaded'));
             
@@ -133,7 +141,6 @@ export default function FileUpload() {
             console.error("Upload error:", err);
             const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred";
             
-            // Rollback: Delete the document record if it was created
             if (currentDocumentId) {
                 console.log(`⚠️ Error occurred. Cleaning up document ${currentDocumentId}...`);
                 await deleteDocument(currentDocumentId); 
@@ -160,140 +167,135 @@ export default function FileUpload() {
         }
     };
 
-    // Helper to determine icon based on file type
     const getFileIcon = (file: File | null, fileName: string | null) => {
         const name = file ? file.name : fileName;
-        if (!name) return <Upload className="w-8 h-8 text-blue-400" />;
+        if (!name) return <Upload className="w-5 h-5 text-blue-400" />;
 
-        if (name.match(/\.(jpg|jpeg|png|webp)$/i)) {
-            return <ImageIcon className="w-8 h-8 text-purple-400" />;
+        const ext = name.split('.').pop()?.toLowerCase();
+
+        if (['jpg', 'jpeg', 'png', 'webp'].includes(ext || '')) {
+            return <ImageIcon className="w-5 h-5 text-purple-400" />;
         }
-        return <FileText className="w-8 h-8 text-green-400" />;
+        if (['js', 'jsx', 'ts', 'tsx', 'py', 'html', 'css', 'json'].includes(ext || '')) {
+            return <Code className="w-5 h-5 text-yellow-400" />;
+        }
+        return <FileText className="w-5 h-5 text-green-400" />;
     };
 
     return (
-        <div className="w-full max-w-md mx-auto space-y-4">
-            <div className="p-6 bg-gray-900 rounded-xl shadow-xl border border-gray-800">
-                {/* Drag & Drop Zone */}
-                <div
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    className={`relative border-2 border-dashed rounded-lg p-8 transition-all duration-200 ${
-                        isDragging
-                            ? 'border-blue-500 bg-blue-950/30 scale-105'
+        <div className="w-full space-y-2">
+            {/* Ultra-Compact Drop Zone */}
+            <div 
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`
+                    relative cursor-pointer overflow-hidden rounded-xl border-2 border-dashed transition-all duration-300 
+                    ${isDragging 
+                        ? 'border-blue-500 bg-blue-500/10' 
+                        : selectedFile
+                            ? 'border-green-500/50 bg-green-500/5'
+                            : 'border-zinc-800 bg-zinc-900/50 hover:border-zinc-700'
+                    }
+                `}
+            >
+                <AnimatePresence>
+                    {isUploading && (
+                        <motion.div
+                            initial={{ top: "-10%" }}
+                            animate={{ top: "110%" }}
+                            transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                            className="absolute left-0 right-0 h-0.5 bg-linear-to-r from-transparent via-blue-500 to-transparent opacity-50 pointer-events-none z-0"
+                        />
+                    )}
+                </AnimatePresence>
+
+                <div className="p-4 flex flex-col items-center gap-2 text-center z-10 relative">
+                    {/* Icon */}
+                    <div className={`p-2 rounded-full ring-1 transition-all ${
+                        isUploading 
+                            ? 'bg-blue-950/50 ring-blue-900' 
                             : selectedFile
-                            ? 'border-green-500 bg-green-950/20'
-                            : 'border-gray-700 bg-gray-800/50 hover:border-gray-600'
-                    }`}
-                >
-                    <div className="flex flex-col items-center justify-center space-y-4">
-                        {/* Icon */}
-                        <div className={`p-4 rounded-full transition-all ${
-                            isUploading 
-                                ? 'bg-blue-950/50' 
-                                : selectedFile
-                                ? 'bg-green-950/50'
-                                : 'bg-blue-950/50'
-                        }`}>
-                            {isUploading ? (
-                                <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
-                            ) : selectedFile ? (
-                                getFileIcon(selectedFile, null)
-                            ) : lastUploadedFile ? (
-                                <CheckCircle className="w-8 h-8 text-green-400" />
-                            ) : (
-                                <Upload className="w-8 h-8 text-blue-400" />
-                            )}
-                        </div>
-
-                        {/* Selected File Info */}
-                        {selectedFile ? (
-                            <div className="text-center w-full">
-                                <div className="flex items-center justify-center gap-2 mb-2">
-                                    <p className="text-sm font-medium text-white truncate max-w-50">
-                                        {selectedFile.name}
-                                    </p>
-                                    {!isUploading && (
-                                        <button
-                                            onClick={cancelSelection}
-                                            className="text-gray-400 hover:text-red-400 transition-colors"
-                                        >
-                                            <X className="w-4 h-4" />
-                                        </button>
-                                    )}
-                                </div>
-                                <p className="text-xs text-gray-400">
-                                    {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-                                </p>
-                            </div>
+                                ? 'bg-green-950/50 ring-green-900'
+                                : 'bg-zinc-950 ring-zinc-800'
+                    }`}>
+                        {isUploading ? (
+                            <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+                        ) : selectedFile ? (
+                            getFileIcon(selectedFile, null)
+                        ) : lastUploadedFile ? (
+                            <CheckCircle className="w-5 h-5 text-green-400" />
                         ) : (
-                            <div className="text-center">
-                                <h3 className="text-lg font-semibold text-white">
-                                    {isDragging ? 'Drop file here' : 'Upload Document'}
-                                </h3>
-                                <p className="text-sm text-gray-400 mt-1">
-                                    {isDragging ? 'Release to upload' : 'Drag & drop or click to browse'}
-                                </p>
-                                <p className="text-xs text-gray-500 mt-1">PDF, TXT, JPG, PNG (Max 10MB)</p>
-                            </div>
-                        )}
-
-                        {lastUploadedFile && !selectedFile && (
-                            <p className="text-xs text-green-400">Last: {lastUploadedFile}</p>
-                        )}
-
-                        {/* Action Buttons */}
-                        {selectedFile ? (
-                            <button
-                                onClick={uploadFile}
-                                disabled={isUploading}
-                                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg shadow transition-colors"
-                            >
-                                {isUploading ? "Uploading..." : "Upload File"}
-                            </button>
-                        ) : (
-                            <label className="relative cursor-pointer">
-                                <span className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg shadow transition-colors inline-block">
-                                    Select File
-                                </span>
-                                <input 
-                                    id="file-input"
-                                    type="file" 
-                                    className="hidden" 
-                                    accept="application/pdf,text/plain,image/jpeg,image/png,image/webp"
-                                    onChange={handleFileInputChange}
-                                    disabled={isUploading}
-                                />
-                            </label>
+                            <Upload className={`w-5 h-5 text-blue-400 ${isDragging ? 'animate-bounce' : ''}`} />
                         )}
                     </div>
 
-                    {/* Upload Progress Bar */}
-                    {isUploading && (
-                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-800 rounded-b-lg overflow-hidden">
-                            <div className="h-full bg-blue-600 animate-pulse w-full"></div>
+                    {/* Text */}
+                    {selectedFile ? (
+                        <div className="w-full space-y-1">
+                            <div className="flex items-center justify-center gap-1.5">
+                                <p className="text-xs font-medium text-zinc-100 truncate max-w-40">
+                                    {selectedFile.name}
+                                </p>
+                                {!isUploading && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); cancelSelection(); }}
+                                        className="text-zinc-500 hover:text-red-400 transition-colors"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                )}
+                            </div>
+                            <p className="text-[10px] text-zinc-500">
+                                {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                            </p>
+                        </div>
+                    ) : (
+                        <div>
+                            <h3 className="text-sm font-semibold text-zinc-200">
+                                {isDragging ? 'Drop here' : 'Upload Document'}
+                            </h3>
+                            <p className="text-[10px] text-zinc-500 mt-0.5">
+                                Drag & drop or click
+                            </p>
                         </div>
                     )}
-                </div>
 
-                {/* File Type Legend */}
-                <div className="mt-4 flex items-center justify-center gap-4 text-xs text-gray-500">
-                    <div className="flex items-center gap-1">
-                        <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                        <span>PDF</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                        <span>TXT</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                        <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                        <span>IMG</span>
-                    </div>
+                    {/* Mode Tag - More Compact */}
+                    {!selectedFile && (
+                        <span className="text-[9px] text-zinc-600 uppercase tracking-wider bg-zinc-900/70 px-1.5 py-0.5 rounded border border-zinc-800">
+                            {activeMode}
+                        </span>
+                    )}
+
+                    {/* Action Button */}
+                    {selectedFile ? (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); uploadFile(); }}
+                            disabled={isUploading}
+                            className="w-full px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-medium rounded-lg transition-all"
+                        >
+                            {isUploading ? "Uploading..." : "Start Analysis"}
+                        </button>
+                    ) : (
+                        <label className="w-full cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                            <span className="block w-full px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 text-xs font-medium rounded-lg transition-colors text-center">
+                                Browse Files
+                            </span>
+                            <input 
+                                id="file-input"
+                                type="file" 
+                                className="hidden" 
+                                accept=".pdf,.txt,.md,.json,.csv,.js,.jsx,.ts,.tsx,.py,.java,.go,.rb,.c,.cpp,.h,.css,.html,.sql,.yaml,.yml,.jpg,.jpeg,.png,.webp"
+                                onChange={handleFileInputChange}
+                                disabled={isUploading}
+                            />
+                        </label>
+                    )}
                 </div>
             </div>
-
+            
+            {/* Error Message */}
             {uploadError && (
                 <ErrorMessage
                     title="Upload Failed"

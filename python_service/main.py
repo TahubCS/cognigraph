@@ -9,6 +9,7 @@ from openai import OpenAI # type: ignore
 import pypdf # type: ignore
 import io
 import base64
+import json
 
 # Load environment variables
 load_dotenv(dotenv_path="../.env.local")
@@ -25,7 +26,122 @@ s3_client = boto3.client(
 
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# --- HELPER FUNCTIONS (The Logic) ---
+# --- 🧠 SMART STRATEGIES (Context + Chunking Config) ---
+
+STRATEGIES = {
+    "legal": {
+        "chunk_size": 2500,  # Large chunks to keep full clauses/contracts intact
+        "chunk_overlap": 500,
+        "system": "You are a Senior Legal Analyst. Extract entities related to contracts, laws, and compliance.",
+        "nodes": ["Person", "Organization", "Contract", "Clause", "Statute", "Date", "Location"],
+        "edges": ["SIGNED", "VIOLATES", "REFERENCES", "AMENDS", "LIABLE_FOR", "LOCATED_IN"],
+        "prompt": """
+            Analyze the text for legal relationships.
+            - Identify parties (Person/Org) and their obligations.
+            - Link Clauses to specific statutes or dates.
+            - Highlight liability and compliance risks.
+        """
+    },
+    "financial": {
+        "chunk_size": 1500, # Medium-Large for tables and reports
+        "chunk_overlap": 300,
+        "system": "You are a Wall Street Financial Analyst. Extract entities related to markets, earnings, and risk.",
+        "nodes": ["Company", "Metric", "Currency", "Asset", "Risk", "Regulation"],
+        "edges": ["REPORTED", "INCREASED", "DECREASED", "OWNS", "HEDGES_AGAINST", "COMPLIES_WITH"],
+        "prompt": """
+            Analyze the text for financial performance and risk.
+            - Extract KPIs (Revenue, EBITDA) and map them to Companies.
+            - Identify market risks and regulatory dependencies.
+        """
+    },
+    "medical": {
+        "chunk_size": 1200, # Standard size for clinical notes
+        "chunk_overlap": 250,
+        "system": "You are a Chief Medical Officer. Extract clinical entities with high precision.",
+        "nodes": ["Patient", "Symptom", "Condition", "Drug", "Treatment", "Dosage"],
+        "edges": ["DIAGNOSED_WITH", "TREATED_WITH", "CAUSES", "PREVENTS", "CONTRAINDICATES"],
+        "prompt": """
+            Analyze the text for clinical relationships.
+            - Map Symptoms to Conditions.
+            - Link Treatments/Drugs to the Conditions they address.
+            - Identify side effects or contraindications.
+        """
+    },
+    "engineering": {
+        "chunk_size": 1500, # Capture full function definitions/classes
+        "chunk_overlap": 300,
+        "system": "You are a Senior Staff Engineer. Extract technical architecture and dependencies.",
+        "nodes": ["System", "Component", "Class", "Function", "API", "Database", "Service"],
+        "edges": ["CALLS", "IMPORTS", "DEPENDS_ON", "RETURNS", "STORES_IN", "INHERITS_FROM"],
+        "prompt": """
+            Analyze the text for software architecture.
+            - Identify System Components (Classes, Services) and how they interact.
+            - Map API endpoints to the data they handle.
+            - Highlight dependencies and potential failure points.
+        """
+    },
+    "sales": {
+        "chunk_size": 800, # Smaller chunks for emails/chats/RFPs
+        "chunk_overlap": 150,
+        "system": "You are a Sales Operations Manager. Extract customer needs and product fit.",
+        "nodes": ["Client", "Product", "Feature", "PainPoint", "Requirement", "Competitor"],
+        "edges": ["NEEDS", "PURCHASED", "COMPETES_WITH", "SOLVES", "REQUESTED"],
+        "prompt": """
+            Analyze the text for sales opportunities and requirements.
+            - Map Clients to their specific Pain Points.
+            - Link Products to the Requirements they solve.
+            - Identify Competitors mentioned.
+        """
+    },
+    "regulatory": {
+        "chunk_size": 2000, # Large chunks for dense policy documents
+        "chunk_overlap": 400,
+        "system": "You are a Compliance Officer. Extract regulations and violations.",
+        "nodes": ["Regulation", "Agency", "Policy", "Violation", "Standard", "Audit"],
+        "edges": ["ENFORCES", "VIOLATES", "COMPLIES_WITH", "AUDITED_BY", "MANDATES"],
+        "prompt": """
+            Analyze the text for regulatory compliance.
+            - Link Agencies (FDA, SEC) to the Regulations they enforce.
+            - Identify internal Policies and check for alignment with Standards.
+        """
+    },
+    "journalism": {
+        "chunk_size": 1000,
+        "chunk_overlap": 200,
+        "system": "You are an Investigative Journalist. Extract the who, what, where, and when.",
+        "nodes": ["Person", "Event", "Location", "Date", "Source", "Organization"],
+        "edges": ["WITNESSED", "REPORTED", "OCCURRED_AT", "INVOLVED_IN", "QUOTED"],
+        "prompt": """
+            Analyze the text for factual reporting.
+            - Create a timeline of Events linked to Dates.
+            - Map People to the Events they were involved in.
+            - Track Sources of information.
+        """
+    },
+    "hr": {
+        "chunk_size": 1000,
+        "chunk_overlap": 200,
+        "system": "You are a Human Resources Director. Extract employee and policy info.",
+        "nodes": ["Employee", "Role", "Department", "Policy", "Benefit", "Skill"],
+        "edges": ["REPORTS_TO", "MEMBER_OF", "ELIGIBLE_FOR", "REQUIRES", "VIOLATES"],
+        "prompt": """
+            Analyze the text for organizational structure and benefits.
+            - Map Roles to Departments.
+            - Link Employees to their Skills and Benefits.
+            - Identify policy requirements.
+        """
+    },
+    "general": {
+        "chunk_size": 1000,
+        "chunk_overlap": 200,
+        "system": "You are a Knowledge Graph Expert. Extract key entities and relationships.",
+        "nodes": ["Person", "Organization", "Location", "Concept", "Event", "Object"],
+        "edges": ["RELATED_TO", "PART_OF", "LOCATED_IN", "CREATED", "USES"],
+        "prompt": "Extract key entities and relationships to build a general knowledge graph."
+    }
+}
+
+# --- HELPER FUNCTIONS ---
 
 def get_db_connection():
     return psycopg.connect(
@@ -36,21 +152,13 @@ def get_db_connection():
 
 def download_from_s3(file_key):
     print(f"📥 Downloading {file_key} from S3...")
-    try:
-        response = s3_client.get_object(Bucket=os.getenv("AWS_BUCKET_NAME"), Key=file_key)
-        return response['Body'].read()
-    except Exception as e:
-        print(f"❌ S3 Error: {e}")
-        raise e
+    response = s3_client.get_object(Bucket=os.getenv("AWS_BUCKET_NAME"), Key=file_key)
+    return response['Body'].read()
 
 def get_image_description(image_bytes, source_info="image"):
-    """
-    Sends image to GPT-4o-mini to get a detailed text description.
-    """
-    print(f"👁️ analyzing visual content from {source_info}...")
+    print(f"👁️ Analyzing visual content from {source_info}...")
     try:
         base64_image = base64.b64encode(image_bytes).decode('utf-8')
-        
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -58,13 +166,7 @@ def get_image_description(image_bytes, source_info="image"):
                     "role": "user",
                     "content": [
                         {"type": "text", "text": "Describe this image in detail for a knowledge base. If it contains text, charts, or diagrams, transcribe and summarize them accurately."},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}",
-                                "detail": "low" # Use 'high' if you need absolute precision, 'low' is cheaper/faster
-                            },
-                        },
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}", "detail": "low"}},
                     ],
                 }
             ],
@@ -79,41 +181,29 @@ def extract_text_from_file(file_bytes, file_key):
     print(f"📄 Extracting content from {file_key}...")
     file_ext = file_key.lower().split('.')[-1]
     
-    # 1. Handle PDF (Text + Embedded Images)
     if file_ext == 'pdf':
         try:
             pdf_reader = pypdf.PdfReader(io.BytesIO(file_bytes))
             text = ""
-            
             for page_num, page in enumerate(pdf_reader.pages):
-                # Extract Text
-                page_text = page.extract_text() or ""
-                text += page_text + "\n"
-                
-                # Extract Images from Page
-                # We filter small images to avoid processing icons/logos
+                text += (page.extract_text() or "") + "\n"
                 for img_index, img in enumerate(page.images):
-                    if len(img.data) > 5000: # Only process images > 5KB
-                        print(f"   found image on page {page_num+1}...")
+                    if len(img.data) > 5000:
                         desc = get_image_description(img.data, f"Page {page_num+1} Image {img_index+1}")
                         text += desc
-
             return text
         except Exception as e:
             print(f"⚠️ PDF Error: {e}")
             return ""
-
-    # 2. Handle Standalone Images
     elif file_ext in ['jpg', 'jpeg', 'png', 'webp']:
         return get_image_description(file_bytes, f"Uploaded File: {file_key}")
-            
-    # 3. Handle Plain Text
     else:
         try:
             return file_bytes.decode('utf-8')
-        except UnicodeDecodeError:
+        except:
             return file_bytes.decode('latin-1')
 
+# UPDATED: Now accepts dynamic chunk_size and overlap
 def chunk_text(text, chunk_size=1000, overlap=200):
     print(f"✂️ Chunking text (Size: {chunk_size}, Overlap: {overlap})...")
     chunks = []
@@ -127,42 +217,41 @@ def chunk_text(text, chunk_size=1000, overlap=200):
     return chunks
 
 def generate_embedding(text):
-    # Call OpenAI to get the vector
-    response = openai_client.embeddings.create(
-        input=text,
-        model="text-embedding-3-small"
-    )
+    response = openai_client.embeddings.create(input=text, model="text-embedding-3-small")
     return response.data[0].embedding
 
-def extract_graph_from_text(text, document_id, conn):
-    print("🕸️ Extracting Knowledge Graph...")
+def extract_graph_from_text(text, document_id, conn, domain="general"):
+    print(f"🕸️ Extracting Knowledge Graph (Mode: {domain.upper()})...")
     
-    # We ask GPT to act as a Data Scientist
+    strategy = STRATEGIES.get(domain, STRATEGIES["general"])
+    
     prompt = f"""
-    Extract key entities and relationships from the text below.
-    Return JSON format:
+    {strategy['system']}
+    
+    TASK:
+    {strategy['prompt']}
+    
+    STRICT JSON OUTPUT FORMAT:
     {{
-        "nodes": [{{"label": "Entity Name", "type": "Person/Org/Location"}}],
-        "edges": [{{"source": "Entity Name", "target": "Entity Name", "relationship": "WORKS_FOR/LOCATED_IN"}}],
+        "nodes": [{{"label": "Name", "type": "{'/'.join(strategy['nodes'])}"}}],
+        "edges": [{{"source": "Name", "target": "Name", "relationship": "{'/'.join(strategy['edges'])}"}}],
     }}
     
-    TEXT:
-    {text[:4000]}  # Limit text to fit context window
+    TEXT TO ANALYZE:
+    {text[:6000]} 
     """
 
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo-0125", # Cheaper model is fine for extraction
+            model="gpt-3.5-turbo-0125",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"}
         )
         
-        data = response.choices[0].message.content
-        import json
-        graph_data = json.loads(data)
+        graph_data = json.loads(response.choices[0].message.content)
         
         # Save Nodes
-        node_map = {} # Maps "Label" -> UUID
+        node_map = {}
         for node in graph_data.get('nodes', []):
             cur = conn.execute(
                 """
@@ -196,51 +285,51 @@ def extract_graph_from_text(text, document_id, conn):
         print(f"⚠️ Graph Extraction Error: {e}")
 
 def process_file_logic(file_key: str, document_id: str):
-    """
-    The Main Worker Function.
-    Downloads -> Extracts -> Chunks -> Embeds -> Saves.
-    """
     conn = get_db_connection()
     try:
-        # 1. Update Status to PROCESSING
+        # 1. Update Status
         conn.execute("UPDATE documents SET status = 'PROCESSING' WHERE id = %s", (document_id,))
         
-        # 2. Download from S3
+        # 2. Get Domain (Mode)
+        result = conn.execute("SELECT domain FROM documents WHERE id = %s", (document_id,)).fetchone()
+        domain = result['domain'] if result and result['domain'] else 'general'
+        print(f"🔍 Processing document {document_id} in '{domain}' mode...")
+
+        # 3. Download & Extract
         file_bytes = download_from_s3(file_key)
-        
-        # 3. Extract Text (Smartly handling PDF, Images, or TXT)
         full_text = extract_text_from_file(file_bytes, file_key)
         
         if not full_text.strip():
-            raise Exception("No text could be extracted from this file.")
+            raise Exception("No text extracted.")
 
-        # 4. Chunk
-        chunks = chunk_text(full_text)
+        # 4. Chunk & Embed (USING SMART CONFIG)
+        # -----------------------------------------------------------------
+        strategy = STRATEGIES.get(domain, STRATEGIES["general"])
         
-        # 5. Embed & Save (Loop through chunks)
+        # Use defaults if strategy is missing keys, but STRATEGIES has them all now
+        c_size = strategy.get('chunk_size', 1000)
+        c_overlap = strategy.get('chunk_overlap', 200)
+        
+        chunks = chunk_text(full_text, chunk_size=c_size, overlap=c_overlap)
+        # -----------------------------------------------------------------
+
         print("🧠 Generating Embeddings...")
-        for i, chunk in enumerate(chunks):
+        for chunk in chunks:
             embedding = generate_embedding(chunk)
-            
-            # Save to Postgres Vector Table
             conn.execute(
-                """
-                INSERT INTO embeddings (document_id, content, embedding)
-                VALUES (%s, %s, %s)
-                """,
+                "INSERT INTO embeddings (document_id, content, embedding) VALUES (%s, %s, %s)",
                 (document_id, chunk, embedding)
             )
-            print(f"   Saved chunk {i+1}/{len(chunks)}")
 
-        # 6. NEW: Extract Graph Structure
-        extract_graph_from_text(full_text, document_id, conn)
+        # 5. Extract Graph (Using Domain Strategy)
+        extract_graph_from_text(full_text, document_id, conn, domain)
 
-        # 7. Mark Complete (Renumbered)
+        # 6. Complete
         conn.execute("UPDATE documents SET status = 'COMPLETED' WHERE id = %s", (document_id,))
-        print(f"🎉 Document {document_id} processing complete!")
+        print(f"🎉 Success!")
 
     except Exception as e:
-        print(f"❌ Processing Failed: {e}")
+        print(f"❌ Failed: {e}")
         conn.execute("UPDATE documents SET status = 'FAILED' WHERE id = %s", (document_id,))
     finally:
         conn.close()
@@ -253,18 +342,8 @@ class ProcessRequest(BaseModel):
 
 @app.post("/process")
 async def process_document(request: ProcessRequest, background_tasks: BackgroundTasks):
-    """
-    Receives a request to process a file.
-    Offloads the heavy work to a Background Task so it doesn't block.
-    """
-    # Verify DB connection first
-    conn = get_db_connection()
-    conn.close()
-    
-    # Add to background queue (Fire and Forget)
     background_tasks.add_task(process_file_logic, request.file_key, request.document_id)
-    
-    return {"status": "processing_started", "file_key": request.file_key}
+    return {"status": "processing_started"}
 
 @app.get("/")
 def health_check():

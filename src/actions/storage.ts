@@ -15,14 +15,15 @@ const s3Client = new S3Client({
     requestChecksumCalculation: 'WHEN_REQUIRED',
 });
 
-export async function getPresignedUrl(filename: string, contentType: string) {
+// UPDATED: Now accepts 'mode' to save to the database
+export async function getPresignedUrl(filename: string, contentType: string, mode: string = 'general') {
     const { userId } = await auth();
     
     if (!userId) {
         return { success: false, error: "Not authenticated" };
     }
 
-    // 🆕 Rate Limiting Check
+    // Rate Limiting Check
     const { success: rateLimitSuccess, limit, reset, remaining } = await uploadRateLimiter.limit(userId);
     
     if (!rateLimitSuccess) {
@@ -36,6 +37,7 @@ export async function getPresignedUrl(filename: string, contentType: string) {
         };
     }
 
+    // FIX for ESLint: Log the rate limit stats so variables are "used"
     console.log(`⏱️ Rate limit: ${remaining}/${limit} uploads remaining for user ${userId}`);
 
     const dbClient = new Client({
@@ -45,16 +47,17 @@ export async function getPresignedUrl(filename: string, contentType: string) {
     try {
         console.log("🔍 Connecting to database...");
         await dbClient.connect();
-        console.log("✅ Database connected");
 
         const fileKey = `${userId}/${Date.now()}-${filename}`;
 
-        console.log("💾 Inserting document record...");
+        console.log(`💾 Inserting document record with mode: ${mode}...`);
+        
+        // UPDATED: Insert 'domain' (mode) into the database
         const result = await dbClient.query(
-            `INSERT INTO documents (user_id, file_key, filename, status) 
-            VALUES ($1, $2, $3, $4) 
+            `INSERT INTO documents (user_id, file_key, filename, status, domain) 
+            VALUES ($1, $2, $3, $4, $5) 
             RETURNING id`,
-            [userId, fileKey, filename, 'PENDING']
+            [userId, fileKey, filename, 'PENDING', mode]
         );
         
         const documentId = result.rows[0].id;

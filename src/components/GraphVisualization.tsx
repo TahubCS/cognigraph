@@ -3,25 +3,30 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { getGraphData } from '@/actions/graph';
-import { Loader2, RefreshCw, Filter, Download, Camera, X} from 'lucide-react'; // Added Camera, X, Check
+import { 
+    Loader2, RefreshCw, Filter, Download, Camera, X, 
+    ZoomIn, ZoomOut, Maximize, Share2, Info
+} from 'lucide-react';
 import ErrorMessage from './ErrorMessage';
 import NodeDetailsPanel from './NodeDetailsPanels';
 import { exportGraphAsPNG, exportGraphAsSVG } from '@/lib/export-utils';
 import toast from 'react-hot-toast';
 
+// 1. Dynamic Import (No SSR)
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), { 
     ssr: false,
     loading: () => (
-        <div className="flex items-center justify-center h-full">
-            <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+        <div className="flex items-center justify-center h-full bg-zinc-950">
+            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
         </div>
     )
 });
 
+// Types
 type GraphNode = {
     id: string;
     name: string;
-    group: string;
+    group: string; // 'Person', 'Organization', etc.
     document: string;
     val: number;
     x?: number;
@@ -30,86 +35,60 @@ type GraphNode = {
 
 type GraphData = {
     nodes: GraphNode[];
-    links: Array<{
-        source: string;
-        target: string;
-        label: string;
-    }>;
+    links: Array<{ source: string; target: string; label: string }>;
     documents: string[];
     types: string[];
 };
 
 export default function GraphVisualization() {
+    // --- STATE ---
     const [data, setData] = useState<GraphData>({ nodes: [], links: [], documents: [], types: [] });
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    
+    // UI State
     const [documentFilter, setDocumentFilter] = useState<string>('all');
     const [typeFilter, setTypeFilter] = useState<string>('all');
     const [showFilters, setShowFilters] = useState(false);
+    const [showExportMenu, setShowExportMenu] = useState(false);
+    const [isCaptureMode, setIsCaptureMode] = useState(false);
+    const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+    
+    // Selection
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
     const [selectedNodeName, setSelectedNodeName] = useState<string | null>(null);
-    const [showExportMenu, setShowExportMenu] = useState(false);
-    
-    // 🆕 Capture Mode State
-    const [isCaptureMode, setIsCaptureMode] = useState(false);
+    const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
 
     // Refs
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const graphRef = useRef<any>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    // 1. Enter Capture Mode (don't export yet)
-    const startCaptureMode = () => {
-        setIsCaptureMode(true);
-        setShowExportMenu(false);
-        setShowFilters(false);
-        toast('Adjust the graph view, then click the Camera button to download.', {
-            icon: '📸',
-            duration: 4000,
-        });
-    };
-
-    // 2. Actually Export
-    const performCapture = async () => {
-        try {
-            await exportGraphAsPNG(containerRef);
-            toast.success('Snapshot downloaded!');
-            setIsCaptureMode(false); // Exit mode after success
-        } catch (error) {
-            toast.error('Failed to export graph');
-            console.error(error);
-        }
-    };
-
-    const handleExportSVG = () => {
-        try {
-            const nodesWithCoords = data.nodes.filter(n => n.x !== undefined && n.y !== undefined);
-            
-            if (nodesWithCoords.length === 0) {
-                toast.error('Please wait for the graph to finish rendering');
-                return;
+    // --- 1. RESIZE OBSERVER (Fixes "Infinite Graph") ---
+    useEffect(() => {
+        if (!containerRef.current) return;
+        const resizeObserver = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                setDimensions({
+                    width: entry.contentRect.width,
+                    height: entry.contentRect.height
+                });
             }
+        });
+        resizeObserver.observe(containerRef.current);
+        return () => resizeObserver.disconnect();
+    }, []);
 
-            toast.loading('Exporting SVG...');
-            exportGraphAsSVG(data.nodes, data.links);
-            toast.success('SVG exported!');
-            setShowExportMenu(false);
-        } catch (error) {
-            toast.error('Failed to export graph');
-            console.error(error);
-        }
-    };
-
+    // --- 2. DATA LOADING ---
     const loadGraph = useCallback(async () => {
         setIsLoading(true);
         setError(null);
-        
         try {
             const graphData = await getGraphData(
                 documentFilter === 'all' ? undefined : documentFilter,
                 typeFilter === 'all' ? undefined : typeFilter
             );
-            console.log('🎨 Graph Data Loaded:', graphData);
+            // Transform types for coloring if needed, but keeping your logic
             setData(graphData as GraphData);
         } catch (err) {
             console.error('Graph loading error:', err);
@@ -119,237 +98,352 @@ export default function GraphVisualization() {
         }
     }, [documentFilter, typeFilter]);
 
-    useEffect(() => {
-        loadGraph();
-    }, [loadGraph]);
+    useEffect(() => { loadGraph(); }, [loadGraph]);
 
+    // Auto-refresh listener
     useEffect(() => {
         const handleFileUploaded = () => {
-            console.log('📢 File uploaded, refreshing graph in 3 seconds...');
-            setTimeout(() => {
-                loadGraph();
-            }, 3000);
+            console.log('📢 File uploaded, refreshing graph...');
+            setTimeout(loadGraph, 2000);
         };
-
         window.addEventListener('file-uploaded', handleFileUploaded);
         return () => window.removeEventListener('file-uploaded', handleFileUploaded);
     }, [loadGraph]);
 
+    // --- 3. ACTIONS (Export, Zoom) ---
+    const startCaptureMode = () => {
+        setIsCaptureMode(true);
+        setShowExportMenu(false);
+        setShowFilters(false);
+        toast('Adjust view, then click Camera to snap.', { icon: '📸', duration: 4000 });
+    };
+
+    const performCapture = async () => {
+        try {
+            await exportGraphAsPNG(containerRef);
+            toast.success('Snapshot downloaded!');
+            setIsCaptureMode(false);
+        } catch (error) {
+            toast.error('Failed to export graph');
+            console.error(error);
+        }
+    };
+
+    const handleExportSVG = () => {
+        try {
+            const nodesWithCoords = data.nodes.filter(n => n.x !== undefined && n.y !== undefined);
+            if (nodesWithCoords.length === 0) {
+                toast.error('Wait for graph to settle');
+                return;
+            }
+            exportGraphAsSVG(data.nodes, data.links);
+            toast.success('SVG exported!');
+            setShowExportMenu(false);
+        } catch (error) {
+            toast.error('Failed to export');
+            console.error(error);
+        }
+    };
+
+    const handleZoom = (factor: number) => {
+        if (!graphRef.current) return;
+        const currentZoom = graphRef.current.zoom();
+        graphRef.current.zoom(currentZoom * factor, 400);
+    };
+
+    const handleReset = () => {
+        if (!graphRef.current) return;
+        // zoomToFit automatically respects minZoom/maxZoom padding
+        graphRef.current.zoomToFit(400, 50); // 400ms animation, 50px padding
+    };
+
+    // --- 4. COLORS (Zinc Theme Compatible) ---
+    const getNodeColor = (node: GraphNode) => {
+        switch(node.group) {
+            case 'Person': return '#3b82f6';      // blue-500
+            case 'Organization': return '#a855f7'; // purple-500
+            case 'Location': return '#ef4444';     // red-500
+            case 'Concept': return '#10b981';      // emerald-500
+            case 'Event': return '#f59e0b';        // amber-500
+            default: return '#71717a';             // zinc-500
+        }
+    };
+
     return (
         <div className="w-full space-y-4">
+            {/* BENTO BOX CONTAINER 
+               - h-[600px] fixes the height (no infinity)
+               - bg-zinc-950 matches the pro theme
+            */}
             <div 
                 ref={containerRef}
-                className="w-full h-125 border border-gray-800 rounded-xl overflow-hidden bg-gray-950 shadow-xl relative"
+                className="relative w-full h-150 bg-zinc-950 rounded-xl border border-zinc-800 overflow-hidden shadow-2xl group"
             >
-                {/* conditional rendering: 
-                   If isCaptureMode is TRUE, show the "Capture Bar".
-                   If FALSE, show the standard "Header Bar".
-                */}
+                {/* --- HEADER OVERLAYS --- */}
                 
                 {isCaptureMode ? (
-                    // 📸 CAPTURE MODE TOOLBAR
-                    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-gray-900/90 border border-blue-500/50 p-2 rounded-full shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-4">
-                        <span className="text-xs font-medium text-blue-200 pl-2">
-                            Adjust view, then capture
-                        </span>
-                        
-                        <div className="h-4 w-px bg-gray-700 mx-1" />
-                        
-                        <button
-                            onClick={performCapture}
-                            className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-full transition-all hover:scale-105 active:scale-95 shadow-lg shadow-blue-900/20"
-                            title="Take Snapshot"
-                        >
+                    // 📸 CAPTURE MODE BAR
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-zinc-900/90 border border-blue-500/50 p-2 rounded-full shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-4">
+                        <span className="text-xs font-medium text-blue-200 pl-2">Adjust & Snap</span>
+                        <div className="h-4 w-px bg-zinc-700 mx-1" />
+                        <button onClick={performCapture} className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-full transition-all hover:scale-105 shadow-lg shadow-blue-900/20">
                             <Camera className="w-4 h-4" />
                         </button>
-                        
-                        <button
-                            onClick={() => setIsCaptureMode(false)}
-                            className="bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white p-2 rounded-full transition-colors"
-                            title="Cancel"
-                        >
+                        <button onClick={() => setIsCaptureMode(false)} className="bg-zinc-700 hover:bg-zinc-600 text-zinc-300 hover:text-white p-2 rounded-full transition-colors">
                             <X className="w-4 h-4" />
                         </button>
                     </div>
                 ) : (
-                    // 🟢 STANDARD HEADER BAR
-                    <div className="absolute top-4 left-4 right-4 z-10 flex items-center justify-between gap-2">
-                        <div className="bg-black/70 text-white px-3 py-1 rounded-full text-xs backdrop-blur-sm pointer-events-none border border-white/5">
-                            Knowledge Graph - {data.nodes.length} nodes, {data.links.length} edges
+                    // 🛠️ STANDARD TOOLS
+                    <>
+                        {/* Top Left: Title Pill */}
+                        <div className="absolute top-4 left-4 z-10 pointer-events-none">
+                            <div className="flex items-center gap-2 bg-zinc-900/80 backdrop-blur-md border border-zinc-800 px-3 py-1.5 rounded-lg shadow-sm">
+                                <Share2 className="w-4 h-4 text-zinc-400" />
+                                <span className="text-xs font-medium text-zinc-300 uppercase tracking-wider">Knowledge Graph</span>
+                                <span className="text-[10px] text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded">
+                                    {data.nodes.length} Nodes
+                                </span>
+                            </div>
                         </div>
-                        
-                        <div className="flex items-center gap-2">
-                            {/* Export Dropdown */}
+
+                        {/* Top Right: Actions */}
+                        <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+                            {/* Export */}
                             <div className="relative">
                                 <button 
-                                    onClick={() => setShowExportMenu(!showExportMenu)}
-                                    className="bg-gray-800 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-colors border border-gray-700"
+                                    onClick={() => { setShowExportMenu(!showExportMenu); setShowFilters(false); }}
+                                    className={`p-2 rounded-lg border backdrop-blur-sm transition-colors ${showExportMenu ? 'bg-zinc-800 border-zinc-600 text-white' : 'bg-zinc-900/80 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
                                 >
-                                    <Download className="w-3 h-3" />
-                                    Export
+                                    <Download className="w-4 h-4" />
                                 </button>
                                 {showExportMenu && (
-                                    <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 min-w-32 overflow-hidden">
-                                        <button
-                                            onClick={startCaptureMode} // 👈 Starts Capture Mode
-                                            className="w-full text-left px-3 py-2 text-xs text-white hover:bg-gray-700 border-b border-gray-700/50 flex items-center gap-2 transition-colors"
-                                        >
-                                            <Camera className="w-3 h-3 text-blue-400" />
-                                            Export PNG
+                                    <div className="absolute right-0 top-full mt-2 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 w-36 overflow-hidden">
+                                        <button onClick={startCaptureMode} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white border-b border-zinc-800 flex items-center gap-2">
+                                            <Camera className="w-3 h-3 text-blue-400" /> PNG Snapshot
                                         </button>
-                                        <button
-                                            onClick={handleExportSVG}
-                                            className="w-full text-left px-3 py-2 text-xs text-white hover:bg-gray-700 flex items-center gap-2 transition-colors"
-                                        >
-                                            <div className="w-3 h-3 flex items-center justify-center font-bold text-[8px] border border-green-500 text-green-500 rounded-sm">V</div>
-                                            Export SVG
+                                        <button onClick={handleExportSVG} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white flex items-center gap-2">
+                                            <div className="w-3 h-3 flex items-center justify-center font-bold text-[8px] border border-green-500 text-green-500 rounded-sm">V</div> SVG Vector
                                         </button>
                                     </div>
                                 )}
                             </div>
-                            
-                            <button 
-                                onClick={() => setShowFilters(!showFilters)}
-                                className="bg-gray-800 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-colors border border-gray-700"
-                            >
-                                <Filter className="w-3 h-3" />
-                                Filters
-                            </button>
-                            
+
+                            {/* Filter */}
+                            <div className="relative">
+                                <button 
+                                    onClick={() => { setShowFilters(!showFilters); setShowExportMenu(false); }}
+                                    className={`p-2 rounded-lg border backdrop-blur-sm transition-colors ${showFilters ? 'bg-zinc-800 border-zinc-600 text-white' : 'bg-zinc-900/80 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+                                >
+                                    <Filter className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            {/* Refresh */}
                             <button 
                                 onClick={loadGraph}
-                                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs disabled:opacity-50 flex items-center gap-1.5 transition-colors shadow-lg shadow-blue-900/20"
                                 disabled={isLoading}
+                                className="p-2 bg-blue-600/90 hover:bg-blue-600 border border-blue-500/50 text-white rounded-lg backdrop-blur-sm transition-all shadow-lg shadow-blue-900/20 disabled:opacity-50"
                             >
-                                <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
-                                {isLoading ? 'Loading...' : 'Refresh'}
+                                <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                             </button>
                         </div>
-                    </div>
+                    </>
                 )}
 
-                {/* Filters Panel (Hide when in capture mode) */}
+                {/* --- FILTER PANEL (Floating) --- */}
                 {showFilters && !isCaptureMode && (
-                    <div className="absolute top-16 right-4 z-10 bg-gray-800 border border-gray-700 rounded-lg p-4 shadow-xl backdrop-blur-sm w-72 animate-in fade-in slide-in-from-top-2">
-                        <h3 className="text-sm font-semibold text-white mb-3">Filter Nodes</h3>
+                    <div className="absolute top-16 right-4 z-10 bg-zinc-900/95 border border-zinc-700 rounded-xl p-4 shadow-2xl backdrop-blur-md w-72 animate-in fade-in slide-in-from-top-2">
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-sm font-semibold text-white">Filter Nodes</h3>
+                            <button onClick={() => setShowFilters(false)} className="text-zinc-500 hover:text-white"><X className="w-3 h-3" /></button>
+                        </div>
                         
-                        <div className="space-y-3">
+                        <div className="space-y-4">
                             <div>
-                                <label className="text-xs text-gray-400 block mb-1">Document</label>
+                                <label className="text-[10px] text-zinc-500 uppercase tracking-wider block mb-1.5">Document</label>
                                 <select
                                     value={documentFilter}
                                     onChange={(e) => setDocumentFilter(e.target.value)}
-                                    className="w-full bg-gray-900 border border-gray-700 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-lg px-2 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 >
                                     <option value="all">All Documents</option>
-                                    {data.documents.map((doc) => (
-                                        <option key={doc} value={doc}>{doc}</option>
-                                    ))}
+                                    {data.documents.map((doc) => <option key={doc} value={doc}>{doc}</option>)}
                                 </select>
                             </div>
 
                             <div>
-                                <label className="text-xs text-gray-400 block mb-1">Node Type</label>
+                                <label className="text-[10px] text-zinc-500 uppercase tracking-wider block mb-1.5">Type</label>
                                 <select
                                     value={typeFilter}
                                     onChange={(e) => setTypeFilter(e.target.value)}
-                                    className="w-full bg-gray-900 border border-gray-700 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-lg px-2 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 >
                                     <option value="all">All Types</option>
-                                    {data.types.map((type) => (
-                                        <option key={type} value={type}>{type}</option>
-                                    ))}
+                                    {data.types.map((type) => <option key={type} value={type}>{type}</option>)}
                                 </select>
                             </div>
 
                             {(documentFilter !== 'all' || typeFilter !== 'all') && (
                                 <button
-                                    onClick={() => {
-                                        setDocumentFilter('all');
-                                        setTypeFilter('all');
-                                    }}
-                                    className="w-full bg-gray-700 hover:bg-gray-600 text-white text-xs py-1.5 rounded transition-colors"
+                                    onClick={() => { setDocumentFilter('all'); setTypeFilter('all'); }}
+                                    className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs py-2 rounded-lg transition-colors border border-zinc-700"
                                 >
-                                    Clear Filters
+                                    Reset Filters
                                 </button>
                             )}
                         </div>
                     </div>
                 )}
-                
-                {data.nodes.length > 0 && !error && (
+
+                {/* --- ZOOM CONTROLS (Bottom Right) --- */}
+                {!isCaptureMode && (
+                    <div className="absolute bottom-4 right-4 z-10 flex flex-col gap-2">
+                        <button onClick={() => handleZoom(1.5)} className="p-2 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 rounded-lg backdrop-blur-sm transition-colors shadow-lg">
+                            <ZoomIn className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => handleZoom(0.75)} className="p-2 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 rounded-lg backdrop-blur-sm transition-colors shadow-lg">
+                            <ZoomOut className="w-4 h-4" />
+                        </button>
+                        <button onClick={handleReset} className="p-2 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 rounded-lg backdrop-blur-sm transition-colors shadow-lg">
+                            <Maximize className="w-4 h-4" />
+                        </button>
+                    </div>
+                )}
+
+                {/* --- HOVER INFO CARD --- */}
+                {hoverNode && !isCaptureMode && (
+                    <div className="absolute top-16 left-4 z-10 w-64 animate-in fade-in slide-in-from-left-2 duration-200 pointer-events-none">
+                        <div className="bg-zinc-900/90 backdrop-blur-xl border border-zinc-700 p-3 rounded-xl shadow-2xl">
+                            <div className="flex items-start gap-3">
+                                <div className="p-2 bg-zinc-800 rounded-lg shrink-0">
+                                    <Info className="w-4 h-4 text-blue-400" />
+                                </div>
+                                <div>
+                                    <h4 className="text-xs font-semibold text-white mb-1 leading-tight line-clamp-2">
+                                        {hoverNode.name || hoverNode.id}
+                                    </h4>
+                                    <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider bg-zinc-800 px-1.5 py-0.5 rounded">
+                                        {hoverNode.group}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* --- THE GRAPH ENGINE --- */}
+                {data.nodes.length > 0 && !error && !isLoading && (
                     <ForceGraph2D
                         ref={graphRef}
+                        width={dimensions.width}
+                        height={dimensions.height}
                         graphData={data}
-                        nodeLabel="name"
-                        nodeColor={node => {
-                            switch(node.group) {
-                                case 'Person': return '#3b82f6';
-                                case 'Skill': return '#10b981';
-                                case 'Company': return '#f59e0b';
-                                default: return '#ef4444';
+
+                        // --- 🔒 BOUNDARY & PHYSICS FIX ---
+                        
+                        // 1. Camera Clamping (The "Wall")
+                        onRenderFramePost={() => {
+                            if (graphRef.current) {
+                                // Get current camera position (we ignore 'k' zoom level to satisfy linter)
+                                const { x, y } = graphRef.current.zoom(); 
+                                
+                                // Define the "Sandbox" size (300px from center in any direction)
+                                const LIMIT = 300; 
+
+                                // Check if we are out of bounds
+                                if (Math.abs(x) > LIMIT || Math.abs(y) > LIMIT) {
+                                    // Calculate clamped coordinates
+                                    const newX = Math.max(-LIMIT, Math.min(LIMIT, x));
+                                    const newY = Math.max(-LIMIT, Math.min(LIMIT, y));
+                                    
+                                    // Force camera back to the boundary instantly (0ms transition)
+                                    graphRef.current.centerAt(newX, newY, 0); 
+                                }
                             }
                         }}
-                        linkColor={() => 'rgba(255,255,255,0.15)'}
+
+                        // 2. Physics Tweak (Stop "Sliding on Ice")
+                        d3VelocityDecay={0.6} // Higher number = more friction (stops faster)
+                        d3AlphaDecay={0.02}   // Stabilization rate
+                        
+                        // --------------------------------
+
+                        // Interaction Settings
+                        enableZoomInteraction={false} // Disable Scroll Wheel Zoom
+                        enablePanInteraction={true}   // Allow Dragging (but clamped by above logic)
+                        enableNodeDrag={true}         // Allow moving specific nodes
+
+                        // Visual Configuration
+                        minZoom={0.5}
+                        maxZoom={4}
+                        nodeLabel={() => ""} 
+                        nodeColor={node => getNodeColor(node as GraphNode)}
+                        backgroundColor="#09090b" 
+                        linkColor={() => "#27272a"} 
+                        
+                        // Node/Link Appearance
                         nodeRelSize={6}
-                        linkDirectionalArrowLength={3.5}
-                        linkDirectionalArrowRelPos={1}
-                        width={800}
-                        height={500}
+                        linkWidth={1.5}
+                        linkDirectionalParticles={isCaptureMode ? 0 : 2}
+                        linkDirectionalParticleSpeed={0.005}
+
+                        // Event Handlers
+                        onNodeHover={(node) => {
+                            if (containerRef.current) containerRef.current.style.cursor = node ? 'pointer' : 'default';
+                            setHoverNode(node as GraphNode || null);
+                        }}
                         onNodeClick={node => {
-                            // Only allow details click if NOT in capture mode
                             if (isCaptureMode) return;
-                            
                             setSelectedNodeId(String(node.id));
                             setSelectedNodeName(String(node.name));
                             
                             graphRef.current?.centerAt(node.x, node.y, 1000);
-                            graphRef.current?.zoom(3, 1000);
+                            graphRef.current?.zoom(2.5, 1000);
+                            
+                            const event = new CustomEvent('graph-node-click', { detail: node.name });
+                            window.dispatchEvent(event);
                         }}
-                        backgroundColor="#030712"
                     />
                 )}
                 
+                {/* Empty State */}
                 {data.nodes.length === 0 && !isLoading && !error && (
-                    <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8 text-center">
-                        <p className="text-lg">No graph data yet</p>
-                        <p className="text-sm mt-2">Upload a document to generate your knowledge graph</p>
+                    <div className="flex flex-col items-center justify-center h-full text-zinc-500">
+                        <div className="p-4 bg-zinc-900 rounded-full mb-3 border border-zinc-800">
+                            <Share2 className="w-6 h-6 text-zinc-600" />
+                        </div>
+                        <p className="text-sm font-medium">No graph data generated yet</p>
+                        <p className="text-xs text-zinc-600 mt-1">Upload documents to visualize connections</p>
                     </div>
                 )}
 
-                {isLoading && data.nodes.length === 0 && (
-                    <div className="flex items-center justify-center h-full">
-                        <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+                {/* Loading State */}
+                {isLoading && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/80 backdrop-blur-sm z-20">
+                        <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-2" />
+                        <p className="text-xs text-zinc-500 animate-pulse">Generating neural map...</p>
                     </div>
                 )}
             </div>
 
             {error && (
                 <ErrorMessage
-                    title="Graph Loading Error"
+                    title="Graph Error"
                     message={error}
                     onRetry={loadGraph}
                     onDismiss={() => setError(null)}
                 />
             )}
 
-            {/* Node Details Panel */}
+            {/* Side Panel (Kept external to the box) */}
             <NodeDetailsPanel
                 nodeId={selectedNodeId}
                 nodeName={selectedNodeName}
-                onClose={() => {
-                    setSelectedNodeId(null);
-                    setSelectedNodeName(null);
-                }}
-                onNodeClick={(nodeId: string, nodeName: string) => {
+                onClose={() => { setSelectedNodeId(null); setSelectedNodeName(null); }}
+                onNodeClick={(nodeId, nodeName) => {
                     setSelectedNodeId(nodeId);
                     setSelectedNodeName(nodeName);
-                    
-                    const node = data.nodes.find((n: GraphNode) => n.id === nodeId);
-                    if (node && node.x !== undefined && node.y !== undefined && graphRef.current) {
-                        graphRef.current.centerAt(node.x, node.y, 1000);
-                        graphRef.current.zoom(3, 1000);
-                    }
                 }}
             />
         </div>
