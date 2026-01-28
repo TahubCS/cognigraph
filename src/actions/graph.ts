@@ -4,22 +4,20 @@ import { Client } from 'pg';
 import { auth } from '@clerk/nextjs/server';
 import { graphRateLimiter } from '@/lib/rate-limit';
 
-export async function getGraphData(documentFilter?: string, typeFilter?: string) {
+// UPDATED: Added 'searchQuery' parameter
+export async function getGraphData(documentFilter?: string, typeFilter?: string, searchQuery?: string) {
     const { userId } = await auth();
     
     if (!userId) {
         return { nodes: [], links: [], documents: [], types: [] };
     }
 
-    // Rate Limiting Check
     const { success: rateLimitSuccess, limit, remaining } = await graphRateLimiter.limit(userId);
     
     if (!rateLimitSuccess) {
-        console.log(`⏱️ Rate limit exceeded for graph data: ${remaining}/${limit}`);
+        console.log(`⏱️ Rate limit exceeded: ${remaining}/${limit}`);
         return { nodes: [], links: [], documents: [], types: [] };
     }
-
-    console.log(`⏱️ Rate limit: ${remaining}/${limit} graph requests remaining for user ${userId}`);
 
     const client = new Client({
         connectionString: process.env.DATABASE_URL,
@@ -28,12 +26,13 @@ export async function getGraphData(documentFilter?: string, typeFilter?: string)
     try {
         await client.connect();
 
-        // Build dynamic WHERE clause for filtering
         let nodeWhereClause = 'WHERE d.user_id = $1';
         let edgeWhereClause = 'WHERE d.user_id = $1';
+        
         const params: unknown[] = [userId];
         let paramIndex = 2;
 
+        // 1. Filter by Document
         if (documentFilter && documentFilter !== 'all') {
             nodeWhereClause += ` AND d.filename = $${paramIndex}`;
             edgeWhereClause += ` AND d.filename = $${paramIndex}`;
@@ -41,24 +40,35 @@ export async function getGraphData(documentFilter?: string, typeFilter?: string)
             paramIndex++;
         }
 
+        // 2. Filter by Node Type
         if (typeFilter && typeFilter !== 'all') {
             nodeWhereClause += ` AND n.type = $${paramIndex}`;
             params.push(typeFilter);
+            paramIndex++;
         }
 
-        // Get filtered nodes
+        // 3. NEW: Filter by Search Query (Node Label)
+        if (searchQuery && searchQuery.trim() !== '') {
+            nodeWhereClause += ` AND n.label ILIKE '%' || $${paramIndex} || '%'`;
+            params.push(searchQuery);
+            paramIndex++;
+        }
+
+        // Fetch Nodes
         const nodesResult = await client.query(`
             SELECT DISTINCT n.id, n.label, n.type, d.filename
             FROM nodes n
             JOIN documents d ON n.document_id = d.id
             ${nodeWhereClause}
+            LIMIT 500
         `, params);
 
-        // Get edges (only between visible nodes)
+        // Fetch Edges (Only if we have nodes)
         const nodeIds = nodesResult.rows.map(n => n.id);
         let edgesResult;
         
         if (nodeIds.length > 0) {
+            // We only want edges where BOTH source and target are in our filtered node list
             edgesResult = await client.query(`
                 SELECT DISTINCT e.source_node_id as source, e.target_node_id as target, e.relationship as label 
                 FROM edges e
@@ -71,25 +81,14 @@ export async function getGraphData(documentFilter?: string, typeFilter?: string)
             edgesResult = { rows: [] };
         }
 
-        // Get all available documents for filter dropdown
+        // Metadata for dropdowns (unfiltered list)
         const documentsResult = await client.query(`
-            SELECT DISTINCT d.filename
-            FROM documents d
-            JOIN nodes n ON n.document_id = d.id
-            WHERE d.user_id = $1
-            ORDER BY d.filename
+            SELECT DISTINCT d.filename FROM documents d JOIN nodes n ON n.document_id = d.id WHERE d.user_id = $1 ORDER BY d.filename
         `, [userId]);
 
-        // Get all available node types for filter dropdown
         const typesResult = await client.query(`
-            SELECT DISTINCT n.type
-            FROM nodes n
-            JOIN documents d ON n.document_id = d.id
-            WHERE d.user_id = $1
-            ORDER BY n.type
+            SELECT DISTINCT n.type FROM nodes n JOIN documents d ON n.document_id = d.id WHERE d.user_id = $1 ORDER BY n.type
         `, [userId]);
-
-        console.log(`📊 Graph for user ${userId}: ${nodesResult.rows.length} nodes, ${edgesResult.rows.length} edges (filtered: doc=${documentFilter}, type=${typeFilter})`);
 
         return {
             nodes: nodesResult.rows.map(n => ({

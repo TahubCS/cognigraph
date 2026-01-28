@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { getGraphData } from '@/actions/graph';
 import { 
     Loader2, RefreshCw, Filter, Download, Camera, X, 
-    ZoomIn, ZoomOut, Maximize, Share2, Info, Zap, ZapOff 
+    ZoomIn, ZoomOut, Maximize, Share2, Info, Zap, ZapOff, Search 
 } from 'lucide-react';
 import ErrorMessage from './ErrorMessage';
 import NodeDetailsPanel from './NodeDetailsPanels';
@@ -21,6 +21,18 @@ const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
         </div>
     )
 });
+
+// --- UTILITY: DEBOUNCE HOOK ---
+function useDebounce<T>(value: T, delay: number): T {
+    const [debouncedValue, setDebouncedValue] = useState(value);
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedValue(value);
+        }, delay);
+        return () => clearTimeout(handler);
+    }, [value, delay]);
+    return debouncedValue;
+}
 
 type GraphNode = {
     id: string;
@@ -48,6 +60,11 @@ export default function GraphVisualization() {
     // UI State
     const [documentFilter, setDocumentFilter] = useState<string>('all');
     const [typeFilter, setTypeFilter] = useState<string>('all');
+    const [searchQuery, setSearchQuery] = useState<string>(''); 
+    
+    // ⚡ DEBOUNCE
+    const debouncedSearch = useDebounce(searchQuery, 500);
+
     const [showFilters, setShowFilters] = useState(false);
     const [showExportMenu, setShowExportMenu] = useState(false);
     const [isCaptureMode, setIsCaptureMode] = useState(false);
@@ -64,12 +81,11 @@ export default function GraphVisualization() {
     const graphRef = useRef<any>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    // --- 1. RESIZE OBSERVER (Fixed: Using requestAnimationFrame) ---
+    // --- 1. RESIZE OBSERVER ---
     useEffect(() => {
         if (!containerRef.current) return;
         
         const resizeObserver = new ResizeObserver((entries) => {
-            // Wrap in RAF to prevent "Update while rendering" error
             requestAnimationFrame(() => {
                 for (const entry of entries) {
                     if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
@@ -93,16 +109,20 @@ export default function GraphVisualization() {
         try {
             const graphData = await getGraphData(
                 documentFilter === 'all' ? undefined : documentFilter,
-                typeFilter === 'all' ? undefined : typeFilter
+                typeFilter === 'all' ? undefined : typeFilter,
+                debouncedSearch
             );
             
             // Auto-enable Perf Mode if needed
             if (graphData.nodes.length > 100) {
-                setIsPerformanceMode(true);
-                // We use a unique ID for the toast to prevent duplicates
-                toast('Performance mode auto-enabled', { icon: '⚡', id: 'perf-auto' });
+                if (!isPerformanceMode) {
+                    setIsPerformanceMode(true);
+                    toast('Performance mode auto-enabled', { icon: '⚡', id: 'perf-auto' });
+                }
             } else {
-                setIsPerformanceMode(false);
+                if (isPerformanceMode) {
+                    setIsPerformanceMode(false);
+                }
             }
 
             setData(graphData as GraphData);
@@ -112,7 +132,8 @@ export default function GraphVisualization() {
         } finally {
             setIsLoading(false);
         }
-    }, [documentFilter, typeFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [documentFilter, typeFilter, debouncedSearch]); 
 
     useEffect(() => { loadGraph(); }, [loadGraph]);
 
@@ -171,14 +192,17 @@ export default function GraphVisualization() {
         graphRef.current.zoomToFit(400, 50);
     };
 
+    // --- FIX: FIXED DOUBLE TOAST ISSUE HERE ---
     const togglePerformanceMode = () => {
-        setIsPerformanceMode(prev => {
-            const newState = !prev;
-            toast(newState ? 'Performance Mode ON' : 'Performance Mode OFF', {
-                icon: newState ? '⚡' : '🐢',
-                duration: 2000
-            });
-            return newState;
+        const nextState = !isPerformanceMode;
+        setIsPerformanceMode(nextState);
+        
+        // Moved toast OUTSIDE the setState callback
+        // Added 'id' to guarantee no duplicates
+        toast(nextState ? 'Performance Mode ON' : 'Performance Mode OFF', {
+            icon: nextState ? '⚡' : '🐢',
+            duration: 2000,
+            id: 'perf-toggle' 
         });
     };
 
@@ -281,6 +305,7 @@ export default function GraphVisualization() {
                     </>
                 )}
 
+                {/* --- FILTER PANEL --- */}
                 {showFilters && !isCaptureMode && (
                     <div className="absolute top-16 right-4 z-10 bg-zinc-900/95 border border-zinc-700 rounded-xl p-4 shadow-2xl backdrop-blur-md w-72 animate-in fade-in slide-in-from-top-2">
                         <div className="flex items-center justify-between mb-3">
@@ -289,6 +314,21 @@ export default function GraphVisualization() {
                         </div>
                         
                         <div className="space-y-4">
+                            {/* Search Input */}
+                            <div>
+                                <label className="text-[10px] text-zinc-500 uppercase tracking-wider block mb-1.5">Search Nodes</label>
+                                <div className="relative">
+                                    <input 
+                                        type="text" 
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        placeholder="Type to filter..."
+                                        className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-lg pl-8 pr-2 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 placeholder-zinc-600"
+                                    />
+                                    <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-2.5" />
+                                </div>
+                            </div>
+
                             <div>
                                 <label className="text-[10px] text-zinc-500 uppercase tracking-wider block mb-1.5">Document</label>
                                 <select
@@ -313,9 +353,13 @@ export default function GraphVisualization() {
                                 </select>
                             </div>
 
-                            {(documentFilter !== 'all' || typeFilter !== 'all') && (
+                            {(documentFilter !== 'all' || typeFilter !== 'all' || searchQuery !== '') && (
                                 <button
-                                    onClick={() => { setDocumentFilter('all'); setTypeFilter('all'); }}
+                                    onClick={() => { 
+                                        setDocumentFilter('all'); 
+                                        setTypeFilter('all'); 
+                                        setSearchQuery(''); 
+                                    }}
                                     className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs py-2 rounded-lg transition-colors border border-zinc-700"
                                 >
                                     Reset Filters
@@ -401,7 +445,6 @@ export default function GraphVisualization() {
 
                         onNodeHover={(node) => {
                             if (containerRef.current) containerRef.current.style.cursor = node ? 'pointer' : 'default';
-                            // Safe check to prevent excessive updates
                             if (hoverNode?.id !== node?.id) {
                                 setHoverNode(node as GraphNode || null);
                             }
