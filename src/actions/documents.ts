@@ -12,7 +12,6 @@ const s3Client = new S3Client({
     },
 });
 
-// UPDATED: Now accepts pagination parameters
 export async function getDocuments(page: number = 1, limit: number = 5) {
     const { userId } = await auth();
     
@@ -29,7 +28,7 @@ export async function getDocuments(page: number = 1, limit: number = 5) {
         
         const offset = (page - 1) * limit;
 
-        // 1. Get Total Count (for pagination UI)
+        // 1. Get Total Count
         const countResult = await client.query(`
             SELECT COUNT(*) as count 
             FROM documents 
@@ -75,7 +74,7 @@ export async function deleteDocument(documentId: string) {
     try {
         await client.connect();
 
-        // 1. Get the file_key BEFORE deleting the record
+        // 1. Get the file info BEFORE deleting
         const fileResult = await client.query(`
             SELECT file_key, filename 
             FROM documents 
@@ -103,25 +102,24 @@ export async function deleteDocument(documentId: string) {
             }
         }
 
-        // 3. Delete from Database
-        await client.query(`
-            DELETE FROM documents
-            WHERE id = $1 AND user_id = $2
-        `, [documentId, userId]);
-
+        // 3. Delete from Database (Clean Children First)
+        // We removed the premature 'DELETE FROM documents' that was here
+        
+        // A. Delete Graph Data (Nodes & Edges)
         await client.query('DELETE FROM edges WHERE document_id = $1', [documentId]);
         await client.query('DELETE FROM nodes WHERE document_id = $1', [documentId]);
         
-        // B. Delete Vector Data
+        // B. Delete Vector Data (Embeddings)
         await client.query('DELETE FROM embeddings WHERE document_id = $1', [documentId]);
 
-        // C. Finally delete the Document
+        // 4. Finally Delete the Parent Document
         await client.query(`
             DELETE FROM documents
             WHERE id = $1 AND user_id = $2
         `, [documentId, userId]);
 
-        console.log(`🗑️ DB: Clean cleanup complete for ${documentId}`);
+        // ✅ FIX: Now using the filename variable
+        console.log(`🗑️ DB: Clean cleanup complete for ${documentId} (${filename})`);
         
         return { success: true };
 
