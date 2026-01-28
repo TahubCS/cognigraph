@@ -58,7 +58,7 @@ async function searchContext(query: string, userId: string) {
     try {
         await client.connect();
 
-        // 1. Vector Search (Finds RELEVANT content)
+        // 1. Vector Search (Content)
         const OpenAI = (await import('openai')).default;
         const openaiClient = new OpenAI({
             apiKey: process.env.OPENAI_API_KEY,
@@ -70,7 +70,7 @@ async function searchContext(query: string, userId: string) {
         });
         const vector = JSON.stringify(embeddingResponse.data[0].embedding);
 
-        const result = await client.query(`
+        const contentResult = await client.query(`
             SELECT 
                 e.content,
                 d.filename,
@@ -80,23 +80,69 @@ async function searchContext(query: string, userId: string) {
             WHERE d.user_id = $2 
               AND 1 - (e.embedding <=> $1) > 0.1
             ORDER BY e.embedding <=> $1
-            LIMIT 10;
+            LIMIT 8;
         `, [vector, userId]);
 
-        // 2. Metadata Search (Finds ALL filenames) - NEW! 🚀
+        // 2. Metadata Search (Files + Time) - 🚀 UPDATED
+        // Now fetching 'created_at' so the AI knows WHEN files were added
         const filesResult = await client.query(`
-            SELECT filename, status 
+            SELECT filename, status, created_at 
             FROM documents 
             WHERE user_id = $1 
             ORDER BY created_at DESC
         `, [userId]);
-
-        const allFiles = filesResult.rows.map(f => f.filename);
-
-        const context = result.rows.map(row => `SOURCE: ${row.filename}\n${row.content}`).join('\n\n---\n\n');
         
+        const allFiles = filesResult.rows.map(f => 
+            `${f.filename} (Uploaded: ${new Date(f.created_at).toLocaleDateString()})`
+        );
+
+        // 3. Graph Search (Specific Relationships)
+        const graphResult = await client.query(`
+            SELECT 
+                n.label as source, 
+                n.type as source_type,
+                e.relationship,
+                n2.label as target,
+                n2.type as target_type
+            FROM nodes n
+            JOIN edges e ON e.source_node_id = n.id
+            JOIN nodes n2 ON e.target_node_id = n2.id
+            JOIN documents d ON n.document_id = d.id
+            WHERE d.user_id = $2
+            AND (
+                n.label ILIKE '%' || $1 || '%' 
+                OR n2.label ILIKE '%' || $1 || '%'
+            )
+            LIMIT 10;
+        `, [query, userId]);
+
+        const graphContext = graphResult.rows.map(row => 
+            `RELATIONSHIP: "${row.source}" (${row.source_type}) -> [${row.relationship}] -> "${row.target}" (${row.target_type})`
+        ).join('\n');
+
+        // 4. "Main Characters" Search (Global Context) - 🚀 NEW!
+        // Finds the most connected nodes in the entire workspace to give the AI "Common Sense" about the project
+        const topEntitiesResult = await client.query(`
+            SELECT n.label, n.type, COUNT(e.id) as connection_count
+            FROM nodes n
+            JOIN documents d ON n.document_id = d.id
+            LEFT JOIN edges e ON e.source_node_id = n.id OR e.target_node_id = n.id
+            WHERE d.user_id = $1
+            GROUP BY n.label, n.type
+            ORDER BY connection_count DESC
+            LIMIT 8;
+        `, [userId]);
+        
+        const keyEntities = topEntitiesResult.rows.map(r => 
+            `${r.label} (${r.type}) - ${r.connection_count} connections`
+        ).join(', ');
+
+        // Format Text Context
+        const context = contentResult.rows.map(row => `SOURCE: ${row.filename}\n${row.content}`).join('\n\n---\n\n');
+        
+        // Sources for citation
         const uniqueSourcesMap = new Map();
-        result.rows.forEach((row) => {
+        contentResult.rows.forEach((row) => {
             if (!uniqueSourcesMap.has(row.filename)) {
                 uniqueSourcesMap.set(row.filename, {
                     filename: row.filename,
@@ -107,11 +153,11 @@ async function searchContext(query: string, userId: string) {
         });
         const sources = Array.from(uniqueSourcesMap.values());
 
-        return { context, sources, allFiles };
+        return { context, sources, allFiles, graphContext, keyEntities };
 
     } catch (error) {
         console.error("Search failed:", error);
-        return { context: '', sources: [], allFiles: [] };
+        return { context: '', sources: [], allFiles: [], graphContext: '', keyEntities: '' };
     } finally {
         await client.end();
     }
@@ -136,6 +182,7 @@ export async function POST(req: Request) {
         const settings = await getUserSettings();
         const activeMode = settings.activeMode || 'general';
         const systemPersona = EXPERT_PERSONAS[activeMode] || EXPERT_PERSONAS['general'];
+        const recentMessages = messages.slice(-10);
 
         const lastMessage = messages[messages.length - 1];
         let searchQuery = lastMessage.content;
@@ -147,9 +194,9 @@ export async function POST(req: Request) {
                     model: openai('gpt-4o-mini'), 
                     system: `You are a search query optimizer.
                     1. Rewrite the LAST user message into a standalone search query by resolving pronouns (e.g. "it", "that file") using the history.
-                    2. If the user's message is purely conversational (e.g. "thanks", "hello"), return it as is.
+                    2. If the user's message is purely conversational, return it as is.
                     3. DO NOT answer the question. ONLY return the query string.`,
-                    messages: messages,
+                    messages: recentMessages,
                 });
                 
                 console.log(`🔍 Original: "${lastMessage.content}" -> Synthesized: "${synthesizedQuery}"`);
@@ -159,31 +206,35 @@ export async function POST(req: Request) {
             }
         }
 
-        // --- FETCH CONTEXT + ALL FILES ---
-        const { context, sources, allFiles } = await searchContext(searchQuery, userId);
+        // --- FETCH FULL CONTEXT ---
+        const { context, sources, allFiles, graphContext, keyEntities } = await searchContext(searchQuery, userId);
 
         const result = await streamText({
             model: openai('gpt-4-turbo'),
             system: `${systemPersona}
             
             CORE RESPONSIBILITIES:
-            1. Answer primarily based on the provided CONTEXT.
+            1. Answer primarily based on the provided CONTEXT (Text & Graph).
             2. Cite source filenames in your answer (e.g. [Filename.pdf]).
-            3. If the user asks about the chat history, use the Conversation History.
+            3. Use the KNOWLEDGE GRAPH section to explain relationships.
             
             📂 AVAILABLE DOCUMENTS (User's Workspace):
-            ${allFiles.map(f => `- ${f}`).join('\n')}
+            ${allFiles.length > 0 ? allFiles.map(f => `- ${f}`).join('\n') : "No documents uploaded yet."}
+
+            🏆 KEY CONCEPTS (Most Connected Entities):
+            ${keyEntities || "No global graph data available."}
+
+            🔗 SPECIFIC CONNECTIONS (Query-Related):
+            ${graphContext || "No direct entity relationships found for this query."}
             
-            INSTRUCTION:
-            - If the user asks "What files do I have?", list the "AVAILABLE DOCUMENTS" above.
-            - If the user asks about a specific file from that list but it is NOT in the CONTEXT below, explain that you see the file exists but no relevant content chunks were retrieved for this specific query.
+            TEXT CONTEXT:
+            ${context || "No specific content chunks found matching this query."}
             
             STYLE GUIDELINES:
-            - CHECK THE CONVERSATION HISTORY for user preferences (e.g. "be concise").
-            
-            CONTEXT:
-            ${context || "No specific content chunks found matching this query."}`,
-            messages: messages,
+            - If the user asks "What is this workspace about?", use the "KEY CONCEPTS" section.
+            - If the user asks "What did I upload?", use the "AVAILABLE DOCUMENTS" section (note the dates).
+            - CHECK THE CONVERSATION HISTORY for user preferences (e.g. "be concise").`,
+            messages: recentMessages,
         });
 
         const stream = result.textStream;

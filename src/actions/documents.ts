@@ -109,7 +109,19 @@ export async function deleteDocument(documentId: string) {
             WHERE id = $1 AND user_id = $2
         `, [documentId, userId]);
 
-        console.log(`🗑️ DB: Deleted document record ${documentId} (${filename})`);
+        await client.query('DELETE FROM edges WHERE document_id = $1', [documentId]);
+        await client.query('DELETE FROM nodes WHERE document_id = $1', [documentId]);
+        
+        // B. Delete Vector Data
+        await client.query('DELETE FROM embeddings WHERE document_id = $1', [documentId]);
+
+        // C. Finally delete the Document
+        await client.query(`
+            DELETE FROM documents
+            WHERE id = $1 AND user_id = $2
+        `, [documentId, userId]);
+
+        console.log(`🗑️ DB: Clean cleanup complete for ${documentId}`);
         
         return { success: true };
 

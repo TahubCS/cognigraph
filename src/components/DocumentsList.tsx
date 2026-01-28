@@ -36,6 +36,19 @@ export default function DocumentList() {
         }
     }, [page]);
 
+    useEffect(() => {
+        const hasProcessingDocs = documents.some(d => d.status === 'PROCESSING');
+        
+        if (!hasProcessingDocs) return;
+
+        const interval = setInterval(() => {
+            console.log("🔄 Polling for document updates...");
+            loadDocuments(true); // true = background load (no loading spinner)
+        }, 3000);
+
+        return () => clearInterval(interval);
+    }, [documents, loadDocuments]);
+
     // Initial Load & Event Listener
     useEffect(() => {
         let isMounted = true;
