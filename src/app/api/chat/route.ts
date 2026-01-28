@@ -1,5 +1,5 @@
 import { openai } from '@ai-sdk/openai';
-import { streamText } from 'ai';
+import { streamText, generateText } from 'ai'; 
 import { Client } from 'pg';
 import { auth } from '@clerk/nextjs/server';
 import { chatRateLimiter } from '@/lib/rate-limit';
@@ -58,6 +58,7 @@ async function searchContext(query: string, userId: string) {
     try {
         await client.connect();
 
+        // 1. Vector Search (Finds RELEVANT content)
         const OpenAI = (await import('openai')).default;
         const openaiClient = new OpenAI({
             apiKey: process.env.OPENAI_API_KEY,
@@ -82,6 +83,16 @@ async function searchContext(query: string, userId: string) {
             LIMIT 10;
         `, [vector, userId]);
 
+        // 2. Metadata Search (Finds ALL filenames) - NEW! 🚀
+        const filesResult = await client.query(`
+            SELECT filename, status 
+            FROM documents 
+            WHERE user_id = $1 
+            ORDER BY created_at DESC
+        `, [userId]);
+
+        const allFiles = filesResult.rows.map(f => f.filename);
+
         const context = result.rows.map(row => `SOURCE: ${row.filename}\n${row.content}`).join('\n\n---\n\n');
         
         const uniqueSourcesMap = new Map();
@@ -96,11 +107,11 @@ async function searchContext(query: string, userId: string) {
         });
         const sources = Array.from(uniqueSourcesMap.values());
 
-        return { context, sources };
+        return { context, sources, allFiles };
 
     } catch (error) {
         console.error("Search failed:", error);
-        return { context: '', sources: [] };
+        return { context: '', sources: [], allFiles: [] };
     } finally {
         await client.end();
     }
@@ -113,43 +124,65 @@ export async function POST(req: Request) {
         
         if (!userId) return new Response('Unauthorized', { status: 401 });
 
-        // --- FIXED RATE LIMIT BLOCK ---
+        // Rate Limit Check
         const { success: rateLimitSuccess, limit, reset } = await chatRateLimiter.limit(userId);
-        
         if (!rateLimitSuccess) {
             const waitSeconds = Math.ceil((reset - Date.now()) / 1000);
-            // We now use the 'limit' variable in the error message
             return new Response(JSON.stringify({ 
                 error: `Rate limit of ${limit} requests exceeded. Try again in ${waitSeconds}s.` 
             }), { status: 429 });
         }
-        // -----------------------------
 
         const settings = await getUserSettings();
         const activeMode = settings.activeMode || 'general';
         const systemPersona = EXPERT_PERSONAS[activeMode] || EXPERT_PERSONAS['general'];
 
         const lastMessage = messages[messages.length - 1];
-        const { context, sources } = await searchContext(lastMessage.content, userId);
+        let searchQuery = lastMessage.content;
 
-        if (!context) {
-            return new Response(JSON.stringify({ 
-                content: "I couldn't find any relevant information in your uploaded documents.",
-                sources: []
-            }));
+        // --- 🧠 CHAT MEMORY: Query Synthesis ---
+        if (messages.length > 1) {
+            try {
+                const { text: synthesizedQuery } = await generateText({
+                    model: openai('gpt-4o-mini'), 
+                    system: `You are a search query optimizer.
+                    1. Rewrite the LAST user message into a standalone search query by resolving pronouns (e.g. "it", "that file") using the history.
+                    2. If the user's message is purely conversational (e.g. "thanks", "hello"), return it as is.
+                    3. DO NOT answer the question. ONLY return the query string.`,
+                    messages: messages,
+                });
+                
+                console.log(`🔍 Original: "${lastMessage.content}" -> Synthesized: "${synthesizedQuery}"`);
+                searchQuery = synthesizedQuery;
+            } catch (err) {
+                console.warn("Query synthesis failed, falling back to original query", err);
+            }
         }
+
+        // --- FETCH CONTEXT + ALL FILES ---
+        const { context, sources, allFiles } = await searchContext(searchQuery, userId);
 
         const result = await streamText({
             model: openai('gpt-4-turbo'),
             system: `${systemPersona}
             
-            GUIDELINES:
-            1. Answer strictly based on the provided CONTEXT.
-            2. If the answer is not in the context, say "I cannot find that information in the documents."
-            3. Cite the source filenames when possible.
+            CORE RESPONSIBILITIES:
+            1. Answer primarily based on the provided CONTEXT.
+            2. Cite source filenames in your answer (e.g. [Filename.pdf]).
+            3. If the user asks about the chat history, use the Conversation History.
+            
+            📂 AVAILABLE DOCUMENTS (User's Workspace):
+            ${allFiles.map(f => `- ${f}`).join('\n')}
+            
+            INSTRUCTION:
+            - If the user asks "What files do I have?", list the "AVAILABLE DOCUMENTS" above.
+            - If the user asks about a specific file from that list but it is NOT in the CONTEXT below, explain that you see the file exists but no relevant content chunks were retrieved for this specific query.
+            
+            STYLE GUIDELINES:
+            - CHECK THE CONVERSATION HISTORY for user preferences (e.g. "be concise").
             
             CONTEXT:
-            ${context}`,
+            ${context || "No specific content chunks found matching this query."}`,
             messages: messages,
         });
 
@@ -162,8 +195,10 @@ export async function POST(req: Request) {
                     for await (const chunk of stream) {
                         controller.enqueue(encoder.encode(chunk));
                     }
-                    const sourcesMarker = `\n\n__SOURCES__:${JSON.stringify(sources)}`;
-                    controller.enqueue(encoder.encode(sourcesMarker));
+                    if (sources.length > 0) {
+                        const sourcesMarker = `\n\n__SOURCES__:${JSON.stringify(sources)}`;
+                        controller.enqueue(encoder.encode(sourcesMarker));
+                    }
                     controller.close();
                 } catch (error) {
                     controller.error(error);
