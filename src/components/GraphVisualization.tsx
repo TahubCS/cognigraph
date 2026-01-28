@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { getGraphData } from '@/actions/graph';
 import { 
     Loader2, RefreshCw, Filter, Download, Camera, X, 
-    ZoomIn, ZoomOut, Maximize, Share2, Info
+    ZoomIn, ZoomOut, Maximize, Share2, Info, Zap, ZapOff 
 } from 'lucide-react';
 import ErrorMessage from './ErrorMessage';
 import NodeDetailsPanel from './NodeDetailsPanels';
@@ -22,11 +22,10 @@ const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
     )
 });
 
-// Types
 type GraphNode = {
     id: string;
     name: string;
-    group: string; // 'Person', 'Organization', etc.
+    group: string;
     document: string;
     val: number;
     x?: number;
@@ -53,7 +52,8 @@ export default function GraphVisualization() {
     const [showExportMenu, setShowExportMenu] = useState(false);
     const [isCaptureMode, setIsCaptureMode] = useState(false);
     const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-    
+    const [isPerformanceMode, setIsPerformanceMode] = useState(false);
+
     // Selection
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
     const [selectedNodeName, setSelectedNodeName] = useState<string | null>(null);
@@ -64,17 +64,24 @@ export default function GraphVisualization() {
     const graphRef = useRef<any>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    // --- 1. RESIZE OBSERVER (Fixes "Infinite Graph") ---
+    // --- 1. RESIZE OBSERVER (Fixed: Using requestAnimationFrame) ---
     useEffect(() => {
         if (!containerRef.current) return;
+        
         const resizeObserver = new ResizeObserver((entries) => {
-            for (const entry of entries) {
-                setDimensions({
-                    width: entry.contentRect.width,
-                    height: entry.contentRect.height
-                });
-            }
+            // Wrap in RAF to prevent "Update while rendering" error
+            requestAnimationFrame(() => {
+                for (const entry of entries) {
+                    if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+                        setDimensions({
+                            width: entry.contentRect.width,
+                            height: entry.contentRect.height
+                        });
+                    }
+                }
+            });
         });
+
         resizeObserver.observe(containerRef.current);
         return () => resizeObserver.disconnect();
     }, []);
@@ -88,7 +95,16 @@ export default function GraphVisualization() {
                 documentFilter === 'all' ? undefined : documentFilter,
                 typeFilter === 'all' ? undefined : typeFilter
             );
-            // Transform types for coloring if needed, but keeping your logic
+            
+            // Auto-enable Perf Mode if needed
+            if (graphData.nodes.length > 100) {
+                setIsPerformanceMode(true);
+                // We use a unique ID for the toast to prevent duplicates
+                toast('Performance mode auto-enabled', { icon: '⚡', id: 'perf-auto' });
+            } else {
+                setIsPerformanceMode(false);
+            }
+
             setData(graphData as GraphData);
         } catch (err) {
             console.error('Graph loading error:', err);
@@ -100,22 +116,21 @@ export default function GraphVisualization() {
 
     useEffect(() => { loadGraph(); }, [loadGraph]);
 
-    // Auto-refresh listener
     useEffect(() => {
         const handleFileUploaded = () => {
-            console.log('📢 File uploaded, refreshing graph...');
+            console.log('📬 File uploaded, refreshing graph...');
             setTimeout(loadGraph, 2000);
         };
         window.addEventListener('file-uploaded', handleFileUploaded);
         return () => window.removeEventListener('file-uploaded', handleFileUploaded);
     }, [loadGraph]);
 
-    // --- 3. ACTIONS (Export, Zoom) ---
+    // --- 3. ACTIONS ---
     const startCaptureMode = () => {
         setIsCaptureMode(true);
         setShowExportMenu(false);
         setShowFilters(false);
-        toast('Adjust view, then click Camera to snap.', { icon: '📸', duration: 4000 });
+        toast('Adjust view, then click Camera to snap.', { icon: '📷', duration: 4000 });
     };
 
     const performCapture = async () => {
@@ -153,36 +168,40 @@ export default function GraphVisualization() {
 
     const handleReset = () => {
         if (!graphRef.current) return;
-        // zoomToFit automatically respects minZoom/maxZoom padding
-        graphRef.current.zoomToFit(400, 50); // 400ms animation, 50px padding
+        graphRef.current.zoomToFit(400, 50);
     };
 
-    // --- 4. COLORS (Zinc Theme Compatible) ---
+    const togglePerformanceMode = () => {
+        setIsPerformanceMode(prev => {
+            const newState = !prev;
+            toast(newState ? 'Performance Mode ON' : 'Performance Mode OFF', {
+                icon: newState ? '⚡' : '🐢',
+                duration: 2000
+            });
+            return newState;
+        });
+    };
+
+    // --- 4. COLORS ---
     const getNodeColor = (node: GraphNode) => {
         switch(node.group) {
-            case 'Person': return '#3b82f6';      // blue-500
-            case 'Organization': return '#a855f7'; // purple-500
-            case 'Location': return '#ef4444';     // red-500
-            case 'Concept': return '#10b981';      // emerald-500
-            case 'Event': return '#f59e0b';        // amber-500
-            default: return '#71717a';             // zinc-500
+            case 'Person': return '#3b82f6';      
+            case 'Organization': return '#a855f7'; 
+            case 'Location': return '#ef4444';     
+            case 'Concept': return '#10b981';      
+            case 'Event': return '#f59e0b';        
+            default: return '#71717a';             
         }
     };
 
     return (
         <div className="w-full space-y-4">
-            {/* BENTO BOX CONTAINER 
-               - h-[600px] fixes the height (no infinity)
-               - bg-zinc-950 matches the pro theme
-            */}
             <div 
                 ref={containerRef}
                 className="relative w-full h-150 bg-zinc-950 rounded-xl border border-zinc-800 overflow-hidden shadow-2xl group"
             >
                 {/* --- HEADER OVERLAYS --- */}
-                
                 {isCaptureMode ? (
-                    // 📸 CAPTURE MODE BAR
                     <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-zinc-900/90 border border-blue-500/50 p-2 rounded-full shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-4">
                         <span className="text-xs font-medium text-blue-200 pl-2">Adjust & Snap</span>
                         <div className="h-4 w-px bg-zinc-700 mx-1" />
@@ -194,10 +213,8 @@ export default function GraphVisualization() {
                         </button>
                     </div>
                 ) : (
-                    // 🛠️ STANDARD TOOLS
                     <>
-                        {/* Top Left: Title Pill */}
-                        <div className="absolute top-4 left-4 z-10 pointer-events-none">
+                        <div className="absolute top-4 left-4 z-10 pointer-events-none flex flex-col gap-2">
                             <div className="flex items-center gap-2 bg-zinc-900/80 backdrop-blur-md border border-zinc-800 px-3 py-1.5 rounded-lg shadow-sm">
                                 <Share2 className="w-4 h-4 text-zinc-400" />
                                 <span className="text-xs font-medium text-zinc-300 uppercase tracking-wider">Knowledge Graph</span>
@@ -205,11 +222,26 @@ export default function GraphVisualization() {
                                     {data.nodes.length} Nodes
                                 </span>
                             </div>
+                            
+                            {isPerformanceMode && (
+                                <div className="flex items-center gap-1.5 px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded-md animate-in fade-in slide-in-from-left-2">
+                                    <Zap className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                                    <span className="text-[9px] font-bold text-yellow-500 uppercase">High Perf. Mode</span>
+                                </div>
+                            )}
                         </div>
 
-                        {/* Top Right: Actions */}
                         <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
-                            {/* Export */}
+                            <button
+                                onClick={togglePerformanceMode}
+                                className={`p-2 rounded-lg border backdrop-blur-sm transition-colors ${isPerformanceMode ? 'bg-yellow-500/10 border-yellow-500/50 text-yellow-400' : 'bg-zinc-900/80 border-zinc-800 text-zinc-500 hover:text-white hover:bg-zinc-800'}`}
+                                title={isPerformanceMode ? "Disable Performance Mode" : "Enable Performance Mode"}
+                            >
+                                {isPerformanceMode ? <Zap className="w-4 h-4 fill-current" /> : <ZapOff className="w-4 h-4" />}
+                            </button>
+
+                            <div className="h-6 w-px bg-zinc-800 mx-1" />
+
                             <div className="relative">
                                 <button 
                                     onClick={() => { setShowExportMenu(!showExportMenu); setShowFilters(false); }}
@@ -229,7 +261,6 @@ export default function GraphVisualization() {
                                 )}
                             </div>
 
-                            {/* Filter */}
                             <div className="relative">
                                 <button 
                                     onClick={() => { setShowFilters(!showFilters); setShowExportMenu(false); }}
@@ -239,7 +270,6 @@ export default function GraphVisualization() {
                                 </button>
                             </div>
 
-                            {/* Refresh */}
                             <button 
                                 onClick={loadGraph}
                                 disabled={isLoading}
@@ -251,7 +281,6 @@ export default function GraphVisualization() {
                     </>
                 )}
 
-                {/* --- FILTER PANEL (Floating) --- */}
                 {showFilters && !isCaptureMode && (
                     <div className="absolute top-16 right-4 z-10 bg-zinc-900/95 border border-zinc-700 rounded-xl p-4 shadow-2xl backdrop-blur-md w-72 animate-in fade-in slide-in-from-top-2">
                         <div className="flex items-center justify-between mb-3">
@@ -296,7 +325,6 @@ export default function GraphVisualization() {
                     </div>
                 )}
 
-                {/* --- ZOOM CONTROLS (Bottom Right) --- */}
                 {!isCaptureMode && (
                     <div className="absolute bottom-4 right-4 z-10 flex flex-col gap-2">
                         <button onClick={() => handleZoom(1.5)} className="p-2 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 rounded-lg backdrop-blur-sm transition-colors shadow-lg">
@@ -311,7 +339,6 @@ export default function GraphVisualization() {
                     </div>
                 )}
 
-                {/* --- HOVER INFO CARD --- */}
                 {hoverNode && !isCaptureMode && (
                     <div className="absolute top-16 left-4 z-10 w-64 animate-in fade-in slide-in-from-left-2 duration-200 pointer-events-none">
                         <div className="bg-zinc-900/90 backdrop-blur-xl border border-zinc-700 p-3 rounded-xl shadow-2xl">
@@ -332,7 +359,6 @@ export default function GraphVisualization() {
                     </div>
                 )}
 
-                {/* --- THE GRAPH ENGINE --- */}
                 {data.nodes.length > 0 && !error && !isLoading && (
                     <ForceGraph2D
                         ref={graphRef}
@@ -340,41 +366,29 @@ export default function GraphVisualization() {
                         height={dimensions.height}
                         graphData={data}
 
-                        // --- 🔒 BOUNDARY & PHYSICS FIX ---
+                        cooldownTicks={isPerformanceMode ? 200 : Infinity} 
+                        d3VelocityDecay={isPerformanceMode ? 0.9 : 0.6}
+                        d3AlphaDecay={isPerformanceMode ? 0.05 : 0.02}
                         
-                        // 1. Camera Clamping (The "Wall")
+                        linkDirectionalParticles={isPerformanceMode || isCaptureMode ? 0 : 2}
+                        linkDirectionalParticleSpeed={0.005}
+
+                        enableZoomInteraction={false} 
+                        enablePanInteraction={true}   
+                        enableNodeDrag={true}         
+
                         onRenderFramePost={() => {
                             if (graphRef.current) {
-                                // Get current camera position (we ignore 'k' zoom level to satisfy linter)
                                 const { x, y } = graphRef.current.zoom(); 
-                                
-                                // Define the "Sandbox" size (300px from center in any direction)
                                 const LIMIT = 300; 
-
-                                // Check if we are out of bounds
                                 if (Math.abs(x) > LIMIT || Math.abs(y) > LIMIT) {
-                                    // Calculate clamped coordinates
                                     const newX = Math.max(-LIMIT, Math.min(LIMIT, x));
                                     const newY = Math.max(-LIMIT, Math.min(LIMIT, y));
-                                    
-                                    // Force camera back to the boundary instantly (0ms transition)
                                     graphRef.current.centerAt(newX, newY, 0); 
                                 }
                             }
                         }}
 
-                        // 2. Physics Tweak (Stop "Sliding on Ice")
-                        d3VelocityDecay={0.6} // Higher number = more friction (stops faster)
-                        d3AlphaDecay={0.02}   // Stabilization rate
-                        
-                        // --------------------------------
-
-                        // Interaction Settings
-                        enableZoomInteraction={false} // Disable Scroll Wheel Zoom
-                        enablePanInteraction={true}   // Allow Dragging (but clamped by above logic)
-                        enableNodeDrag={true}         // Allow moving specific nodes
-
-                        // Visual Configuration
                         minZoom={0.5}
                         maxZoom={4}
                         nodeLabel={() => ""} 
@@ -382,16 +396,15 @@ export default function GraphVisualization() {
                         backgroundColor="#09090b" 
                         linkColor={() => "#27272a"} 
                         
-                        // Node/Link Appearance
-                        nodeRelSize={6}
-                        linkWidth={1.5}
-                        linkDirectionalParticles={isCaptureMode ? 0 : 2}
-                        linkDirectionalParticleSpeed={0.005}
+                        nodeRelSize={isPerformanceMode ? 4 : 6} 
+                        linkWidth={isPerformanceMode ? 1 : 1.5} 
 
-                        // Event Handlers
                         onNodeHover={(node) => {
                             if (containerRef.current) containerRef.current.style.cursor = node ? 'pointer' : 'default';
-                            setHoverNode(node as GraphNode || null);
+                            // Safe check to prevent excessive updates
+                            if (hoverNode?.id !== node?.id) {
+                                setHoverNode(node as GraphNode || null);
+                            }
                         }}
                         onNodeClick={node => {
                             if (isCaptureMode) return;
@@ -407,7 +420,6 @@ export default function GraphVisualization() {
                     />
                 )}
                 
-                {/* Empty State */}
                 {data.nodes.length === 0 && !isLoading && !error && (
                     <div className="flex flex-col items-center justify-center h-full text-zinc-500">
                         <div className="p-4 bg-zinc-900 rounded-full mb-3 border border-zinc-800">
@@ -418,7 +430,6 @@ export default function GraphVisualization() {
                     </div>
                 )}
 
-                {/* Loading State */}
                 {isLoading && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/80 backdrop-blur-sm z-20">
                         <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-2" />
@@ -436,7 +447,6 @@ export default function GraphVisualization() {
                 />
             )}
 
-            {/* Side Panel (Kept external to the box) */}
             <NodeDetailsPanel
                 nodeId={selectedNodeId}
                 nodeName={selectedNodeName}
