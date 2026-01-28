@@ -4,7 +4,17 @@ import { createContext, useContext, useState } from 'react';
 import { updateUserMode } from '@/actions/user';
 import toast from 'react-hot-toast';
 
-type Mode = 'general' | 'engineering' | 'legal' | 'medical';
+// ✅ UPDATED: Added all modes to match ModeSelector and Python Backend
+type Mode = 
+    | 'general' 
+    | 'legal' 
+    | 'financial' 
+    | 'medical' 
+    | 'engineering' 
+    | 'sales' 
+    | 'regulatory' 
+    | 'journalism' 
+    | 'hr';
 
 interface ModeContextType {
     activeMode: Mode;
@@ -20,9 +30,9 @@ export function ModeProvider({
     children: React.ReactNode;
     initialMode?: string;
 }) {
-    // Initialize state immediately with the server-provided value
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [activeMode, setActiveMode] = useState<Mode>(initialMode as any);
+    // Initialize state with the server-provided value
+    // We cast initialMode to 'Mode' assuming the DB value is valid
+    const [activeMode, setActiveMode] = useState<Mode>(initialMode as Mode);
 
     const setMode = async (mode: Mode) => {
         // 1. Optimistic Update (Change UI instantly)

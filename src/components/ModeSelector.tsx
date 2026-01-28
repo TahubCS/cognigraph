@@ -3,10 +3,9 @@
 import { useMode } from './ModeContext';
 import { 
     Scale, TrendingUp, Stethoscope, Cpu, Headphones, 
-    ShieldCheck, Feather, Users 
+    ShieldCheck, Feather, Users, Globe 
 } from 'lucide-react';
 
-// 1. Add Interface for the prop
 interface ModeSelectorProps {
     onSelect?: () => void;
 }
@@ -15,6 +14,8 @@ export default function ModeSelector({ onSelect }: ModeSelectorProps) {
     const { activeMode, setMode } = useMode();
 
     const modes = [
+        // 1. NEW: General Mode (Added as the first option)
+        { id: 'general', label: 'General Research', icon: Globe, description: 'Unified knowledge graph, broad synthesis, and cross-domain analysis.', color: 'text-indigo-400', bg: 'bg-indigo-500/10', border: 'border-indigo-500/50'},
         { id: 'legal', label: 'Legal Professional', icon: Scale, description: 'Contract review, case research, and due diligence.', color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/50' },
         { id: 'financial', label: 'Financial Analyst', icon: TrendingUp, description: 'SEC filings, earnings reports, and market risk analysis.', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/50' },
         { id: 'medical', label: 'Clinical & Healthcare', icon: Stethoscope, description: 'Medical literature, patient data, and clinical guidelines.', color: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/50' },
@@ -26,13 +27,10 @@ export default function ModeSelector({ onSelect }: ModeSelectorProps) {
     ];
 
     const handleSelect = (modeId: string) => {
-        // 1. Update Global State
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setMode(modeId as any);
         
-        // 2. Close the Modal (The missing conditional trigger)
         if (onSelect) {
-            // Add a tiny delay so the user sees the click register before it vanishes
             setTimeout(() => {
                 onSelect();
             }, 150);
