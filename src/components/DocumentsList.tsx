@@ -106,6 +106,7 @@ export default function DocumentList() {
         
         if (result.success) {
             toast.success("Document deleted");
+            window.dispatchEvent(new Event('document-deleted'));
             loadDocuments();
         } else {
             toast.error(`Failed to delete: ${result.error}`);

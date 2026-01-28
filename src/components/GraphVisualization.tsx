@@ -135,16 +135,25 @@ export default function GraphVisualization() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [documentFilter, typeFilter, debouncedSearch]); 
 
+    // ✅ FIX: Define handleRefresh as a stable callback to fix scoping errors
+    const handleRefresh = useCallback(() => {
+        console.log('♻️ Data changed, refreshing graph...');
+        // Small delay to allow DB propagation
+        setTimeout(loadGraph, 500);
+    }, [loadGraph]);
+
+    // Initial Load
     useEffect(() => { loadGraph(); }, [loadGraph]);
 
+    // ✅ FIX: Event Listeners using the stable handleRefresh
     useEffect(() => {
-        const handleFileUploaded = () => {
-            console.log('📬 File uploaded, refreshing graph...');
-            setTimeout(loadGraph, 2000);
+        window.addEventListener('file-uploaded', handleRefresh);
+        window.addEventListener('document-deleted', handleRefresh);
+        return () => {
+            window.removeEventListener('file-uploaded', handleRefresh);
+            window.removeEventListener('document-deleted', handleRefresh);
         };
-        window.addEventListener('file-uploaded', handleFileUploaded);
-        return () => window.removeEventListener('file-uploaded', handleFileUploaded);
-    }, [loadGraph]);
+    }, [handleRefresh]);
 
     // --- 3. ACTIONS ---
     const startCaptureMode = () => {
@@ -192,13 +201,10 @@ export default function GraphVisualization() {
         graphRef.current.zoomToFit(400, 50);
     };
 
-    // --- FIX: FIXED DOUBLE TOAST ISSUE HERE ---
     const togglePerformanceMode = () => {
         const nextState = !isPerformanceMode;
         setIsPerformanceMode(nextState);
         
-        // Moved toast OUTSIDE the setState callback
-        // Added 'id' to guarantee no duplicates
         toast(nextState ? 'Performance Mode ON' : 'Performance Mode OFF', {
             icon: nextState ? '⚡' : '🐢',
             duration: 2000,
@@ -206,7 +212,6 @@ export default function GraphVisualization() {
         });
     };
 
-    // --- 4. COLORS ---
     const getNodeColor = (node: GraphNode) => {
         switch(node.group) {
             case 'Person': return '#3b82f6';      
