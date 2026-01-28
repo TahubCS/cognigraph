@@ -1,9 +1,9 @@
 import { openai } from '@ai-sdk/openai';
 import { streamText, generateText } from 'ai'; 
-import { Client } from 'pg';
 import { auth } from '@clerk/nextjs/server';
 import { chatRateLimiter } from '@/lib/rate-limit';
 import { getUserSettings } from '@/actions/user';
+import { db } from '@/lib/db';
 
 export const maxDuration = 30;
 
@@ -51,12 +51,8 @@ const EXPERT_PERSONAS: Record<string, string> = {
 };
 
 async function searchContext(query: string, userId: string) {
-    const client = new Client({
-        connectionString: process.env.DATABASE_URL,
-    });
 
     try {
-        await client.connect();
 
         // 1. Vector Search (Content)
         const OpenAI = (await import('openai')).default;
@@ -70,7 +66,7 @@ async function searchContext(query: string, userId: string) {
         });
         const vector = JSON.stringify(embeddingResponse.data[0].embedding);
 
-        const contentResult = await client.query(`
+        const contentResult = await db.query(`
             SELECT 
                 e.content,
                 d.filename,
@@ -85,7 +81,7 @@ async function searchContext(query: string, userId: string) {
 
         // 2. Metadata Search (Files + Time) - 🚀 UPDATED
         // Now fetching 'created_at' so the AI knows WHEN files were added
-        const filesResult = await client.query(`
+        const filesResult = await db.query(`
             SELECT filename, status, created_at 
             FROM documents 
             WHERE user_id = $1 
@@ -97,7 +93,7 @@ async function searchContext(query: string, userId: string) {
         );
 
         // 3. Graph Search (Specific Relationships)
-        const graphResult = await client.query(`
+        const graphResult = await db.query(`
             SELECT 
                 n.label as source, 
                 n.type as source_type,
@@ -122,7 +118,7 @@ async function searchContext(query: string, userId: string) {
 
         // 4. "Main Characters" Search (Global Context) - 🚀 NEW!
         // Finds the most connected nodes in the entire workspace to give the AI "Common Sense" about the project
-        const topEntitiesResult = await client.query(`
+        const topEntitiesResult = await db.query(`
             SELECT n.label, n.type, COUNT(e.id) as connection_count
             FROM nodes n
             JOIN documents d ON n.document_id = d.id
@@ -159,7 +155,7 @@ async function searchContext(query: string, userId: string) {
         console.error("Search failed:", error);
         return { context: '', sources: [], allFiles: [], graphContext: '', keyEntities: '' };
     } finally {
-        await client.end();
+        // No explicit client to close since we're using a shared 'db' instance
     }
 }
 
