@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // ✅ Added useEffect
 import { Download, Loader2 } from 'lucide-react';
 import { getDocumentSummary, getAllDocumentsSummary } from '@/actions/export';
 import toast from 'react-hot-toast';
@@ -128,10 +128,13 @@ export default function DocumentExport() {
         }
     };
 
-    window.exportSingleDocument = exportSingleDocument;
+    // ✅ FIX: Wrap window assignment in useEffect so it only runs on the client
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            window.exportSingleDocument = exportSingleDocument;
+        }
+    }, []); // Runs once on mount
 
-    // Expose exportSingleDocument for use in parent components
-    // You can call this via ref or prop drilling if needed
     return (
         <div className="flex items-center gap-2">
             <button
@@ -150,5 +153,4 @@ export default function DocumentExport() {
     );
 }
 
-// Export the function for use elsewhere if needed
 export { type NodesByType, type Relationship };

@@ -1,33 +1,44 @@
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { UserButton } from '@clerk/nextjs';
+import { 
+    Settings2, X, MessageSquare, 
+    Database, UploadCloud, Activity 
+} from 'lucide-react';
+
+// Components
 import FileUpload from '@/components/FileUpload';
 import ChatInterface from '@/components/ChatInterface';
 import GraphVisualization from '@/components/GraphVisualization';
 import DocumentList from '@/components/DocumentsList';
+import DocumentExport from '@/components/DocumentExport'; // ✅ Added Missing Import
 import ModeSelector from '@/components/ModeSelector';
 import { ModeProvider, useMode } from '@/components/ModeContext';
 import { Card } from '@/components/Card';
-import { Settings2, X } from 'lucide-react';
 
 interface DashboardProps {
     initialMode: string;
 }
 
-function HeaderModeDisplay({ onOpenSelector }: { onOpenSelector: () => void }) {
+// Mini-component for the Header Badge
+function HeaderModeBadge({ onOpen }: { onOpen: () => void }) {
     const { activeMode } = useMode();
     return (
         <button 
-            onClick={onOpenSelector}
-            className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg hover:border-zinc-700 hover:bg-zinc-800 transition-all group"
+            onClick={onOpen}
+            className="flex items-center gap-3 pl-4 pr-1.5 py-1.5 bg-zinc-900/50 border border-zinc-800 hover:border-zinc-700 rounded-full transition-all group"
         >
             <div className="flex flex-col items-end">
-                <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium group-hover:text-zinc-400">Workspace</span>
-                <span className="text-xs font-semibold text-blue-400 capitalize leading-none">{activeMode}</span>
+                <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold">Workspace</span>
+                <span className="text-xs font-semibold text-zinc-200 capitalize leading-none group-hover:text-indigo-400 transition-colors">
+                    {activeMode}
+                </span>
             </div>
-            <Settings2 className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300" />
+            <div className="w-7 h-7 rounded-full bg-zinc-800 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
+                <Settings2 className="w-3.5 h-3.5 text-zinc-400" />
+            </div>
         </button>
     );
 }
@@ -37,113 +48,115 @@ export default function Dashboard({ initialMode }: DashboardProps) {
 
     return (
         <ModeProvider initialMode={initialMode}>
-            {/* HEADER */}
-            <header className="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-xl sticky top-0 z-40">
-                <div className="max-w-400 mx-auto px-6 h-16 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <h1 className="text-xl font-bold tracking-tight bg-linear-to-r from-white to-zinc-400 bg-clip-text text-transparent">
-                            CogniGraph
+            <div className="flex flex-col h-screen bg-black text-zinc-100 overflow-hidden selection:bg-indigo-500/30 font-sans">
+                
+                {/* --- 1. GLOBAL HEADER --- */}
+                <header className="shrink-0 h-14 border-b border-white/10 bg-zinc-950/50 backdrop-blur-xl flex items-center justify-between px-6 z-50">
+                    <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded bg-indigo-600 flex items-center justify-center shadow-[0_0_15px_rgba(79,70,229,0.5)]">
+                            <Activity className="w-3.5 h-3.5 text-white" />
+                        </div>
+                        <h1 className="text-sm font-bold tracking-wide text-zinc-200">
+                            COGNIGRAPH <span className="text-zinc-600 font-normal ml-1">v2.0</span>
                         </h1>
-                        <span className="px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 text-[10px] font-medium text-zinc-400">
-                            BETA
-                        </span>
                     </div>
                     
-                    <div className="flex items-center gap-3">
-                        <HeaderModeDisplay onOpenSelector={() => setShowModeSelector(true)} />
-                        <UserButton 
-                            appearance={{
-                                elements: {
-                                    avatarBox: "w-9 h-9 ring-2 ring-zinc-800 hover:ring-zinc-700 transition-all"
-                                }
-                            }}
-                        />
+                    <div className="flex items-center gap-4">
+                        <HeaderModeBadge onOpen={() => setShowModeSelector(true)} />
+                        <div className="h-6 w-px bg-zinc-800" />
+                        <UserButton appearance={{ elements: { avatarBox: "w-8 h-8 ring-2 ring-zinc-800/50" } }} />
                     </div>
-                </div>
-            </header>
+                </header>
 
-            {/* MODE SELECTOR MODAL */}
-            {showModeSelector && (
-                <>
-                    <div 
-                        onClick={() => setShowModeSelector(false)}
-                        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-100"
-                    />
-                    <div className="fixed inset-0 z-101 flex items-center justify-center p-4 pointer-events-none">
-                        <div 
-                            onClick={(e) => e.stopPropagation()}
-                            className="bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto pointer-events-auto p-6 relative"
+                {/* --- 2. MAIN LAYOUT GRID --- */}
+                <main className="flex-1 p-4 lg:p-6 min-h-0 overflow-hidden">
+                    <div className="grid grid-cols-12 gap-4 h-full">
+                        
+                        {/* LEFT: Data Sources (25%) */}
+                        <motion.aside 
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            className="col-span-12 lg:col-span-3 flex flex-col gap-4 h-full min-h-0"
                         >
-                            <button 
-                                onClick={() => setShowModeSelector(false)}
-                                className="absolute top-4 right-4 p-2 text-zinc-500 hover:text-white bg-zinc-900 rounded-full hover:bg-zinc-800 transition-colors z-10"
+                            <Card title="Ingest Data" icon={UploadCloud} className="shrink-0">
+                                <div className="p-4">
+                                    <FileUpload />
+                                </div>
+                            </Card>
+
+                            <Card 
+                                title="Knowledge Base" 
+                                icon={Database} 
+                                className="flex-1 min-h-0"
+                                action={<DocumentExport />} // ✅ Integrated Export Button
                             >
-                                <X className="w-5 h-5" />
-                            </button>
-                            <ModeSelector onSelect={() => setShowModeSelector(false)} />
-                        </div>
-                    </div>
-                </>
-            )}
+                                <div className="h-full overflow-y-auto custom-scrollbar p-2">
+                                    <DocumentList />
+                                </div>
+                            </Card>
+                        </motion.aside>
 
-            {/* MAIN DASHBOARD GRID */}
-            <div className="max-w-400 mx-auto p-6 h-[calc(100vh-64px)]">
-                <motion.div 
-                    initial={{ opacity: 0 }} 
-                    animate={{ opacity: 1 }} 
-                    className="grid grid-cols-12 gap-6 h-full"
-                >
-                    {/* LEFT COLUMN: Upload & List - FIXED SIZING */}
-                    <motion.aside className="col-span-12 lg:col-span-3 flex flex-col gap-6 h-full">
-                        {/* Upload Card - Fixed size, doesn't grow */}
-                        <Card className="p-4 shrink-0">
-                            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                                Data Source
-                            </h2>
-                            <FileUpload />
-                        </Card>
+                        {/* CENTER: Graph Canvas (50%) */}
+                        <motion.section 
+                            initial={{ opacity: 0, scale: 0.98 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: 0.1 }}
+                            className="col-span-12 lg:col-span-6 h-full min-h-0 relative flex flex-col"
+                        >
+                            {/* We remove padding to let the canvas bleed to edges */}
+                            <Card className="flex-1 border-0! bg-zinc-900/30! overflow-hidden relative">
+                                <div className="absolute inset-0">
+                                    {/* ⚠️ Ensure GraphVisualization uses h-full internally */}
+                                    <GraphVisualization /> 
+                                </div>
+                            </Card>
+                        </motion.section>
 
-                        {/* Documents Card - Takes remaining space, max height to prevent overflow */}
-                        <Card className="flex flex-col p-0 flex-1 min-h-0 max-h-[calc(100%-280px)]">
-                            <div className="p-4 border-b border-zinc-800/50 shrink-0">
-                                <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-                                    Active Documents
-                                </h2>
-                            </div>
-                            <div className="flex-1 overflow-y-auto p-2 min-h-0">
-                                <DocumentList />
-                            </div>
-                        </Card>
-                    </motion.aside>
-
-                    {/* CENTER COLUMN: Graph */}
-                    <motion.main className="col-span-12 lg:col-span-6 flex flex-col h-full overflow-hidden">
-                        <Card className="flex-1 relative p-0 overflow-hidden border-zinc-800 bg-zinc-950 shadow-2xl">
-                            <div className="absolute inset-0">
-                                <GraphVisualization />
-                            </div>
-                        </Card>
-                    </motion.main>
-
-                    {/* RIGHT COLUMN: Chat */}
-                    <motion.aside className="col-span-12 lg:col-span-3 flex flex-col h-full overflow-hidden">
-                        <Card className="flex-1 flex flex-col p-0 overflow-hidden">
-                            <div className="p-4 border-b border-zinc-800/50 flex justify-between items-center shrink-0">
-                                <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                                    Neural Assistant
-                                </h2>
-                            </div>
-                            <div className="flex-1 overflow-hidden relative">
+                        {/* RIGHT: Chat (25%) */}
+                        <motion.aside 
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.2 }}
+                            className="col-span-12 lg:col-span-3 h-full min-h-0"
+                        >
+                            <Card title="Neural Assistant" icon={MessageSquare} className="h-full border-l border-white/10">
                                 <div className="absolute inset-0">
                                     <ChatInterface />
                                 </div>
-                            </div>
-                        </Card>
-                    </motion.aside>
+                            </Card>
+                        </motion.aside>
 
-                </motion.div>
+                    </div>
+                </main>
+
+                {/* --- 3. MODAL OVERLAY --- */}
+                <AnimatePresence>
+                    {showModeSelector && (
+                        <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
+                            <motion.div 
+                                initial={{ opacity: 0 }} 
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setShowModeSelector(false)}
+                                className="absolute inset-0 bg-black/80 backdrop-blur-md"
+                            />
+                            <motion.div 
+                                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                                className="relative bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[85vh] overflow-y-auto p-6"
+                            >
+                                <button 
+                                    onClick={() => setShowModeSelector(false)}
+                                    className="absolute top-4 right-4 p-2 text-zinc-500 hover:text-white bg-zinc-900 rounded-full transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                                <ModeSelector onSelect={() => setShowModeSelector(false)} />
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
             </div>
         </ModeProvider>
     );

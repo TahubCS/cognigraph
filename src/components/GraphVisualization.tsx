@@ -217,7 +217,7 @@ export default function GraphVisualization() {
         <div className="w-full space-y-4">
             <div 
                 ref={containerRef}
-                className="relative w-full h-150 bg-zinc-950 rounded-xl border border-zinc-800 overflow-hidden shadow-2xl group"
+                className="relative w-full h-232 bg-zinc-950 rounded-xl border border-zinc-800 overflow-hidden shadow-2xl group"
             >
                 {/* --- HEADER OVERLAYS --- */}
                 {isCaptureMode ? (
