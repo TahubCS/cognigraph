@@ -134,25 +134,31 @@ def download_from_s3(file_key):
     return response['Body'].read()
 
 def get_image_description(image_bytes, source_info="image"):
-    logger.info(f"👁️ Analyzing visual content from {source_info}...")
+    logger.info(f"👁️ performing strict OCR on {source_info}...")
     try:
         base64_image = base64.b64encode(image_bytes).decode('utf-8')
         response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            # 🔴 CHANGE 1: Use the full model (Mini struggles with small text/usernames)
+            model="gpt-4o", 
             messages=[
+                {
+                    "role": "system", 
+                    "content": "You are a specialized OCR engine. Your ONLY job is to transcribe text exactly as seen in the image. Do not summarize. Do not correct spelling. Do not describe visual elements. Output only the raw text. If text is handwritten, transcribe it to the best of your ability, maintaining the original spelling and grammar even if incorrect."
+                },
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "Describe this image in detail for a knowledge base. If it contains text, charts, or diagrams, transcribe and summarize them accurately."},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}", "detail": "low"}},
+                        {"type": "text", "text": "Extract all text from this image verbatim."},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}", "detail": "high"}}, # 🔴 CHANGE 2: Set detail to 'high'
                     ],
                 }
             ],
-            max_tokens=1000
+            max_tokens=1500
         )
-        return f"\n[IMAGE DESCRIPTION START ({source_info})]\n{response.choices[0].message.content}\n[IMAGE DESCRIPTION END]\n"
+        # We wrap it in markers so the Graph Extractor knows this is raw text data
+        return f"\n[OCR CONTENT START]\n{response.choices[0].message.content}\n[OCR CONTENT END]\n"
     except Exception as e:
-        logger.error(f"⚠️ Vision Error: {e}")
+        logger.error(f"⚠️ OCR Error: {e}")
         return ""
 
 def extract_text_from_file(file_bytes, file_key):
@@ -230,7 +236,7 @@ def extract_graph_from_text(text, document_id, conn, domain="general"):
 
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo-0125",
+            model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"}
         )

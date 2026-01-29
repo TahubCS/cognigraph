@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { X, Loader2, ArrowRight, ArrowLeft, FileText, Network, MessageSquare } from 'lucide-react';
 import { getNodeDetails } from '@/actions/node-details';
+import { getTailwindColor } from '@/lib/node-colors';
 
 type NodeDetails = {
     id: string;
@@ -129,7 +130,7 @@ export default function NodeDetailsPanel({ nodeId, onClose, onNodeClick }: NodeD
                                     <h3 className="text-xl font-bold text-white wrap-break-word">
                                         {details.label}
                                     </h3>
-                                    <span className={`inline-block px-2 py-1 rounded text-xs font-medium mt-2 ${getTypeColor(details.type)}`}>
+                                    <span className={`inline-block px-2 py-1 rounded text-xs font-medium mt-2 ${getTailwindColor(details.type)}`}>
                                         {details.type}
                                     </span>
                                 </div>

@@ -11,6 +11,7 @@ import ErrorMessage from './ErrorMessage';
 import NodeDetailsPanel from './NodeDetailsPanels';
 import { exportGraphAsPNG, exportGraphAsSVG } from '@/lib/export-utils';
 import toast from 'react-hot-toast';
+import { getNodeColor } from '@/lib/node-colors';
 
 // 1. Dynamic Import (No SSR)
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), { 
@@ -210,17 +211,6 @@ export default function GraphVisualization() {
             duration: 2000,
             id: 'perf-toggle' 
         });
-    };
-
-    const getNodeColor = (node: GraphNode) => {
-        switch(node.group) {
-            case 'Person': return '#3b82f6';      
-            case 'Organization': return '#a855f7'; 
-            case 'Location': return '#ef4444';     
-            case 'Concept': return '#10b981';      
-            case 'Event': return '#f59e0b';        
-            default: return '#71717a';             
-        }
     };
 
     return (
@@ -441,7 +431,7 @@ export default function GraphVisualization() {
                         minZoom={0.5}
                         maxZoom={4}
                         nodeLabel={() => ""} 
-                        nodeColor={node => getNodeColor(node as GraphNode)}
+                        nodeColor={node => getNodeColor((node as GraphNode).group)}
                         backgroundColor="#09090b" 
                         linkColor={() => "#27272a"} 
                         
