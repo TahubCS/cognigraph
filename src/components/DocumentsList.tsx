@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { FileText, Loader2, Trash2, CheckCircle, Clock, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getDocuments, deleteDocument } from '@/actions/documents';
 import toast from 'react-hot-toast';
@@ -14,19 +14,52 @@ type Document = {
 
 export default function DocumentList() {
     const [documents, setDocuments] = useState<Document[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(false);
     const [deletingId, setDeletingId] = useState<string | null>(null);
-    
+    const containerRef = useRef<HTMLDivElement>(null);
+
     // Pagination State
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
-    const PAGE_SIZE = 5;
+    const [pageSize, setPageSize] = useState(0); // 0 means "not calculated yet"
 
+    const ROW_HEIGHT = 62; // Approx height of a file row including margin
+    const HEADER_FOOTER_HEIGHT = 54; // Space for pagination controls + padding
+
+    // 1. Measure Available Space
+    useEffect(() => {
+        if (!containerRef.current) return;
+
+        const observer = new ResizeObserver((entries) => {
+            for (let entry of entries) {
+                const height = entry.contentRect.height;
+                // Calculate how many items fit
+                const availableHeight = height - HEADER_FOOTER_HEIGHT;
+                const calculatedLimit = Math.floor(availableHeight / ROW_HEIGHT);
+                const safeLimit = Math.max(3, calculatedLimit); // Minimum 3 items
+
+                setPageSize(prev => {
+                    if (prev !== safeLimit) {
+                        setPage(1); // Reset to page 1 on resize (safest UX)
+                        return safeLimit;
+                    }
+                    return prev;
+                });
+            }
+        });
+
+        observer.observe(containerRef.current);
+        return () => observer.disconnect();
+    }, []);
+
+    // 2. Load Documents (Depends on pageSize)
     const loadDocuments = useCallback(async (isBackground = false) => {
+        if (pageSize === 0) return; // Wait for measurement
+
         if (!isBackground) setIsLoading(true);
-        
+
         try {
-            const { documents: docs, totalPages: total } = await getDocuments(page, PAGE_SIZE);
+            const { documents: docs, totalPages: total } = await getDocuments(page, pageSize);
             setDocuments(docs);
             setTotalPages(total);
         } catch (error) {
@@ -34,28 +67,18 @@ export default function DocumentList() {
         } finally {
             if (!isBackground) setIsLoading(false);
         }
-    }, [page]);
+    }, [page, pageSize]);
 
+    // Initial Load & Polling (Only when pageSize is set)
     useEffect(() => {
-        const hasProcessingDocs = documents.some(d => d.status === 'PROCESSING');
-        
-        if (!hasProcessingDocs) return;
+        if (pageSize === 0) return;
 
-        const interval = setInterval(() => {
-            console.log("🔄 Polling for document updates...");
-            loadDocuments(true); // true = background load (no loading spinner)
-        }, 3000);
-
-        return () => clearInterval(interval);
-    }, [documents, loadDocuments]);
-
-    // Initial Load & Event Listener
-    useEffect(() => {
         let isMounted = true;
         const load = async () => { if (isMounted) await loadDocuments(); };
         load();
 
         const handleFileUploaded = () => {
+            // If on page 1, reload. If not, go to page 1 which triggers reload.
             if (page === 1) {
                 loadDocuments(true);
             } else {
@@ -68,26 +91,27 @@ export default function DocumentList() {
             isMounted = false;
             window.removeEventListener('file-uploaded', handleFileUploaded);
         };
-    }, [loadDocuments, page]);
+    }, [loadDocuments, page, pageSize]);
 
-    // Polling Effect (Checks periodically if files are processing)
+    // Polling Effect
     useEffect(() => {
-        const processingDocs = documents.some(doc => 
+        if (pageSize === 0) return;
+        const processingDocs = documents.some(doc =>
             doc.status === 'PENDING' || doc.status === 'PROCESSING'
         );
 
         if (processingDocs) {
             const intervalId = setInterval(() => {
                 loadDocuments(true);
-            }, 2000); 
+            }, 2000);
             return () => clearInterval(intervalId);
         }
-    }, [documents, loadDocuments]);
+    }, [documents, loadDocuments, pageSize]);
 
     // Auto-cleanup failed docs
     useEffect(() => {
         const failedDocs = documents.filter(doc => doc.status === 'FAILED');
-        
+
         if (failedDocs.length > 0) {
             failedDocs.forEach(async (doc) => {
                 console.log(`❌ Cleanup: Removing failed document ${doc.filename}`);
@@ -100,10 +124,10 @@ export default function DocumentList() {
 
     const handleDelete = async (id: string, filename: string) => {
         if (!confirm(`Delete "${filename}"?`)) return;
-        
+
         setDeletingId(id);
         const result = await deleteDocument(id);
-        
+
         if (result.success) {
             toast.success("Document deleted");
             window.dispatchEvent(new Event('document-deleted'));
@@ -111,7 +135,7 @@ export default function DocumentList() {
         } else {
             toast.error(`Failed to delete: ${result.error}`);
         }
-        
+
         setDeletingId(null);
     };
 
@@ -136,24 +160,28 @@ export default function DocumentList() {
     };
 
     return (
-        <div className="w-full h-full flex flex-col min-h-0">
-            {isLoading && documents.length === 0 ? (
-                <div className="flex items-center justify-center flex-1">
+        <div ref={containerRef} className="w-full h-full flex flex-col min-h-0 relative">
+            {/* Loading State (initial or when pageSize is waiting) */}
+            {(isLoading || pageSize === 0) && documents.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center bg-zinc-900/50 z-10">
                     <Loader2 className="w-6 h-6 text-blue-400 animate-spin" />
                 </div>
-            ) : documents.length === 0 ? (
+            )}
+
+            {documents.length === 0 && !isLoading && pageSize > 0 ? (
                 <div className="flex flex-col items-center justify-center flex-1 text-zinc-500">
                     <FileText className="w-10 h-10 mb-2 text-zinc-700" />
                     <p className="text-xs">No documents yet</p>
                 </div>
             ) : (
                 <>
-                    {/* Documents Container - Fixed height for 5 items */}
-                    <div className="space-y-2 shrink-0">
+                    {/* Documents Container - Flexible */}
+                    <div className="space-y-2 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
                         {documents.map((doc) => (
                             <div
                                 key={doc.id}
                                 className="flex items-center justify-between p-2.5 bg-zinc-800/50 hover:bg-zinc-800 rounded-lg transition-colors border border-zinc-800/50"
+                                style={{ height: '54px' }}
                             >
                                 <div className="flex items-center gap-2.5 flex-1 min-w-0">
                                     {getStatusIcon(doc.status)}
@@ -180,9 +208,9 @@ export default function DocumentList() {
                         ))}
                     </div>
 
-                    {/* Pagination Controls - Only show if needed */}
+                    {/* Pagination Controls */}
                     {totalPages > 1 && (
-                        <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-zinc-800/50 shrink-0">
+                        <div className="flex items-center justify-between mt-auto pt-3 border-t border-zinc-800/50 shrink-0 h-[40px]">
                             <button
                                 onClick={() => setPage(p => Math.max(1, p - 1))}
                                 disabled={page === 1 || isLoading}
@@ -190,7 +218,7 @@ export default function DocumentList() {
                             >
                                 <ChevronLeft className="w-4 h-4" />
                             </button>
-                            
+
                             <span className="text-[10px] text-zinc-500 font-medium">
                                 {page} / {totalPages}
                             </span>
