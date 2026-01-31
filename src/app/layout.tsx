@@ -18,7 +18,27 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      appearance={{
+        baseTheme: undefined,
+        variables: {
+          colorPrimary: '#3b82f6',
+          colorBackground: '#09090b',
+          colorInputBackground: '#18181b',
+          colorInputText: '#f4f4f5',
+          colorText: '#f4f4f5',
+          colorTextSecondary: '#a1a1aa',
+        },
+        elements: {
+          card: 'bg-zinc-950 border border-zinc-800 shadow-2xl',
+          userButtonPopoverCard: 'bg-zinc-950 border border-zinc-800',
+          userButtonPopoverActionButton: 'text-zinc-300 hover:bg-zinc-800',
+          userButtonPopoverActionButtonText: 'text-zinc-300',
+          userButtonPopoverActionButtonIcon: 'text-zinc-400',
+          userButtonPopoverFooter: 'hidden',
+        }
+      }}
+    >
       <html lang="en" suppressHydrationWarning>
         <body
           className={`${geistSans.variable} ${geistMono.variable} antialiased`}

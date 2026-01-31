@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, Sparkles, User, Bot, FileText, AlertCircle } from 'lucide-react';
+import { Send, Loader2, Sparkles, User, Bot, FileText, AlertCircle, ChevronRight, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMode } from './ModeContext';
 
@@ -34,10 +34,16 @@ export default function ChatInterface() {
     const [streamingContent, setStreamingContent] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [isMounted, setIsMounted] = useState(false);
-    
+
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
+    const [pendingAutoSubmit, setPendingAutoSubmit] = useState<string | null>(null);
+    const [activeNodeContext, setActiveNodeContext] = useState<{
+        nodeName: string;
+        nodeType?: string;
+        document?: string;
+    } | null>(null);
 
     // Fix hydration - only render timestamps after mount
     useEffect(() => {
@@ -57,10 +63,56 @@ export default function ChatInterface() {
     // Listen for graph node clicks
     useEffect(() => {
         const handleGraphClick = (e: Event) => {
-            const customEvent = e as CustomEvent;
-            const nodeName = customEvent.detail;
-            setInput(`Tell me about ${nodeName}`);
+            const customEvent = e as CustomEvent<{
+                nodeName: string;
+                nodeType?: string;
+                document?: string;
+                relatedContent?: string[];
+                autoExecute?: boolean
+            } | string>;
+
+            // Handle both old format (string) and new format (object with context)
+            let prompt: string;
+            let autoExecute = false;
+
+            if (typeof customEvent.detail === 'string') {
+                // Legacy format - simple node name
+                prompt = `Tell me about ${customEvent.detail}`;
+            } else {
+                const { nodeName, nodeType, document, relatedContent } = customEvent.detail;
+                autoExecute = customEvent.detail.autoExecute ?? false;
+
+                // Store active node context for breadcrumb display
+                setActiveNodeContext({ nodeName, nodeType, document });
+
+                // Build a context-rich prompt
+                let contextParts: string[] = [];
+
+                if (document) {
+                    contextParts.push(`from the file "${document}"`);
+                }
+
+                if (nodeType) {
+                    contextParts.push(`(${nodeType})`);
+                }
+
+                const context = contextParts.length > 0 ? ` ${contextParts.join(' ')}` : '';
+
+                // Include related content hint if available
+                const contentHint = relatedContent && relatedContent.length > 0
+                    ? ` Please reference the actual code or content from the file.`
+                    : '';
+
+                prompt = `Tell me about "${nodeName}"${context}. Explain its purpose, implementation, and how it connects to other elements in the document.${contentHint}`;
+            }
+
+            setInput(prompt);
             inputRef.current?.focus();
+
+            if (autoExecute) {
+                // Set pending auto-submit - will be handled by the effect below
+                setPendingAutoSubmit(prompt);
+            }
         };
 
         window.addEventListener('graph-node-click', handleGraphClick);
@@ -133,13 +185,13 @@ export default function ChatInterface() {
                 if (done) break;
 
                 const chunk = decoder.decode(value, { stream: true });
-                
+
                 // Check if chunk contains sources marker
                 if (chunk.includes('__SOURCES__:')) {
                     const parts = chunk.split('__SOURCES__:');
                     fullContent += parts[0];
                     setStreamingContent(fullContent);
-                    
+
                     try {
                         sources = JSON.parse(parts[1]);
                     } catch (e) {
@@ -178,6 +230,112 @@ export default function ChatInterface() {
         }
     };
 
+    // Auto-submit function for programmatic execution (from NodeDetailsPanel)
+    const handleAutoSubmit = async (prompt: string) => {
+        if (!prompt.trim() || isLoading) return;
+
+        const userMessage: Message = {
+            id: Date.now().toString(),
+            role: 'user',
+            content: prompt.trim(),
+            timestamp: new Date()
+        };
+
+        setMessages(prev => [...prev, userMessage]);
+        setInput('');
+        setIsLoading(true);
+        setError(null);
+        setStreamingContent('');
+
+        abortControllerRef.current = new AbortController();
+
+        try {
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    messages: [...messages, userMessage].map(m => ({
+                        role: m.role,
+                        content: m.content
+                    }))
+                }),
+                signal: abortControllerRef.current.signal
+            });
+
+            if (!response.ok) {
+                if (response.status === 429) {
+                    const data = await response.json();
+                    throw new Error(data.error || 'Rate limit exceeded. Please try again later.');
+                }
+                throw new Error(`Request failed with status ${response.status}`);
+            }
+
+            const reader = response.body?.getReader();
+            const decoder = new TextDecoder();
+
+            if (!reader) {
+                throw new Error('No response body');
+            }
+
+            let fullContent = '';
+            let sources: Source[] = [];
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+
+                if (chunk.includes('__SOURCES__:')) {
+                    const parts = chunk.split('__SOURCES__:');
+                    fullContent += parts[0];
+                    setStreamingContent(fullContent);
+
+                    try {
+                        sources = JSON.parse(parts[1]);
+                    } catch (e) {
+                        console.error('Failed to parse sources:', e);
+                    }
+                } else {
+                    fullContent += chunk;
+                    setStreamingContent(fullContent);
+                }
+            }
+
+            const assistantMessage: Message = {
+                id: (Date.now() + 1).toString(),
+                role: 'assistant',
+                content: fullContent,
+                sources: sources.length > 0 ? sources : undefined,
+                timestamp: new Date()
+            };
+
+            setMessages(prev => [...prev, assistantMessage]);
+            setStreamingContent('');
+
+        } catch (err) {
+            if (err instanceof Error) {
+                if (err.name === 'AbortError') {
+                    console.log('Request aborted');
+                } else {
+                    setError(err.message);
+                    console.error('Chat error:', err);
+                }
+            }
+        } finally {
+            setIsLoading(false);
+            abortControllerRef.current = null;
+        }
+    };
+
+    // Effect to handle pending auto-submit from node details panel
+    useEffect(() => {
+        if (pendingAutoSubmit && !isLoading) {
+            handleAutoSubmit(pendingAutoSubmit);
+            setPendingAutoSubmit(null);
+        }
+    }, [pendingAutoSubmit, isLoading]);
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -187,6 +345,36 @@ export default function ChatInterface() {
 
     return (
         <div className="flex flex-col h-full bg-zinc-950">
+            {/* Breadcrumb Trail - Shows active node context */}
+            {activeNodeContext && (
+                <div className="shrink-0 px-4 py-2 bg-zinc-900/80 border-b border-zinc-800 flex items-center gap-2 text-sm">
+                    <span className="text-zinc-500">Discussing:</span>
+                    {activeNodeContext.document && (
+                        <>
+                            <span className="text-zinc-400 font-mono text-xs bg-zinc-800 px-2 py-0.5 rounded">
+                                {activeNodeContext.document}
+                            </span>
+                            <ChevronRight className="w-3 h-3 text-zinc-600" />
+                        </>
+                    )}
+                    <span className="text-indigo-400 font-medium">
+                        {activeNodeContext.nodeName}
+                    </span>
+                    {activeNodeContext.nodeType && (
+                        <span className="text-zinc-500 text-xs">
+                            ({activeNodeContext.nodeType})
+                        </span>
+                    )}
+                    <button
+                        onClick={() => setActiveNodeContext(null)}
+                        className="ml-auto p-1 hover:bg-zinc-800 rounded text-zinc-500 hover:text-zinc-300 transition-colors"
+                        title="Clear context"
+                    >
+                        <X className="w-3 h-3" />
+                    </button>
+                </div>
+            )}
+
             {/* Messages Area */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-zinc-800">
                 <AnimatePresence initial={false}>
@@ -203,16 +391,15 @@ export default function ChatInterface() {
                                     <Bot className="w-4 h-4 text-white" />
                                 </div>
                             )}
-                            
+
                             <div className={`max-w-[85%] ${message.role === 'user' ? 'order-1' : ''}`}>
-                                <div className={`rounded-lg px-4 py-3 ${
-                                    message.role === 'user' 
-                                        ? 'bg-blue-600 text-white' 
-                                        : 'bg-zinc-800 text-zinc-100'
-                                }`}>
+                                <div className={`rounded-lg px-4 py-3 ${message.role === 'user'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-zinc-800 text-zinc-100'
+                                    }`}>
                                     <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
                                 </div>
-                                
+
                                 {/* Sources */}
                                 {message.sources && message.sources.length > 0 && (
                                     <div className="mt-2 space-y-1">
@@ -221,8 +408,8 @@ export default function ChatInterface() {
                                             Sources ({message.sources.length})
                                         </p>
                                         {message.sources.map((source, idx) => (
-                                            <div 
-                                                key={idx} 
+                                            <div
+                                                key={idx}
                                                 className="bg-zinc-900/50 border border-zinc-800 rounded px-2 py-1.5 text-xs"
                                             >
                                                 <div className="flex items-center justify-between gap-2 mb-0.5">
@@ -234,7 +421,7 @@ export default function ChatInterface() {
                                         ))}
                                     </div>
                                 )}
-                                
+
                                 {/* Timestamp - suppress hydration warning */}
                                 {isMounted && (
                                     <p className="text-[10px] mt-1 opacity-50 text-zinc-500" suppressHydrationWarning>
@@ -305,7 +492,7 @@ export default function ChatInterface() {
                         </div>
                     </motion.div>
                 )}
-                
+
                 <div ref={messagesEndRef} />
             </div>
 

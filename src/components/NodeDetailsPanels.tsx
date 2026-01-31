@@ -83,15 +83,33 @@ export default function NodeDetailsPanel({ nodeId, onClose, onNodeClick }: NodeD
 
     const handleAskAbout = () => {
         if (details) {
-            const event = new CustomEvent('graph-node-click', { detail: details.label });
-            window.dispatchEvent(event);
+            // Dispatch event to switch view to chat
+            window.dispatchEvent(new CustomEvent('switch-to-chat'));
+
+            // Close the panel immediately
+            onClose();
+
+            // Dispatch event with auto-execute flag after a short delay
+            // This ensures the ChatInterface has time to mount after view switch
+            setTimeout(() => {
+                const event = new CustomEvent('graph-node-click', {
+                    detail: {
+                        nodeName: details.label,
+                        nodeType: details.type,
+                        document: details.document,
+                        relatedContent: details.relatedContent,
+                        autoExecute: true
+                    }
+                });
+                window.dispatchEvent(event);
+            }, 350); // Wait for view transition animation (250ms) + mount time
         }
     };
 
     return (
         <>
             {/* Backdrop */}
-            <div 
+            <div
                 className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
                 onClick={onClose}
             />

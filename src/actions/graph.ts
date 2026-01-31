@@ -4,109 +4,186 @@ import { Client } from 'pg';
 import { auth } from '@clerk/nextjs/server';
 import { graphRateLimiter } from '@/lib/rate-limit';
 
-// UPDATED: Added 'searchQuery' parameter
 export async function getGraphData(documentFilter?: string, typeFilter?: string, searchQuery?: string) {
     const { userId } = await auth();
-    
+
     if (!userId) {
-        return { nodes: [], links: [], documents: [], types: [] };
+        return { nodes: [], links: [], documents: [], types: [], rateLimited: false, error: undefined };
     }
 
     const { success: rateLimitSuccess, limit, remaining } = await graphRateLimiter.limit(userId);
-    
+
     if (!rateLimitSuccess) {
         console.log(`⏱️ Rate limit exceeded: ${remaining}/${limit}`);
-        return { nodes: [], links: [], documents: [], types: [] };
+        return { nodes: [], links: [], documents: [], types: [], rateLimited: true, error: undefined };
     }
 
     const client = new Client({
         connectionString: process.env.DATABASE_URL,
     });
 
+    // Initialize results
+    let documents: string[] = [];
+    let types: string[] = [];
+    let graphNodes: { id: string; name: string; group: string; document: string; val: number }[] = [];
+    let graphLinks: { source: string; target: string; label: string }[] = [];
+    let executionError: string | undefined = undefined;
+
     try {
         await client.connect();
 
-        let nodeWhereClause = 'WHERE d.user_id = $1';
-        let edgeWhereClause = 'WHERE d.user_id = $1';
-        
-        const params: unknown[] = [userId];
-        let paramIndex = 2;
+        // ========================================
+        // STEP 1: ALWAYS FETCH METADATA FIRST
+        // This ensures dropdowns never break
+        // ========================================
+        try {
+            const documentsResult = await client.query(`
+                SELECT DISTINCT d.filename 
+                FROM documents d 
+                JOIN nodes n ON n.document_id = d.id 
+                WHERE d.user_id = $1 
+                ORDER BY d.filename
+            `, [userId]);
+            documents = documentsResult.rows.map(d => d.filename);
 
-        // 1. Filter by Document
-        if (documentFilter && documentFilter !== 'all') {
-            nodeWhereClause += ` AND d.filename = $${paramIndex}`;
-            edgeWhereClause += ` AND d.filename = $${paramIndex}`;
-            params.push(documentFilter);
-            paramIndex++;
+            const typesResult = await client.query(`
+                SELECT DISTINCT n.type 
+                FROM nodes n 
+                JOIN documents d ON n.document_id = d.id 
+                WHERE d.user_id = $1 
+                ORDER BY n.type
+            `, [userId]);
+            types = typesResult.rows.map(t => t.type);
+
+            console.log(`📋 Metadata loaded: ${documents.length} docs, ${types.length} types`);
+        } catch (metaErr) {
+            console.error("Metadata query failed:", metaErr);
+            // Non-critical, continue with empty arrays
         }
 
-        // 2. Filter by Node Type
-        if (typeFilter && typeFilter !== 'all') {
-            nodeWhereClause += ` AND n.type = $${paramIndex}`;
-            params.push(typeFilter);
-            paramIndex++;
-        }
+        // ========================================
+        // STEP 2: FETCH FILTERED GRAPH DATA
+        // ========================================
+        try {
+            const params: unknown[] = [userId];
+            const conditions: string[] = ['d.user_id = $1'];
+            let hasNodeFilter = false;
 
-        // 3. NEW: Filter by Search Query (Node Label)
-        if (searchQuery && searchQuery.trim() !== '') {
-            nodeWhereClause += ` AND n.label ILIKE '%' || $${paramIndex} || '%'`;
-            params.push(searchQuery);
-            paramIndex++;
-        }
+            if (documentFilter && documentFilter !== 'all') {
+                params.push(documentFilter);
+                conditions.push(`d.filename = $${params.length}`);
+            }
 
-        // Fetch Nodes
-        const nodesResult = await client.query(`
-            SELECT DISTINCT n.id, n.label, n.type, d.filename
-            FROM nodes n
-            JOIN documents d ON n.document_id = d.id
-            ${nodeWhereClause}
-            LIMIT 500
-        `, params);
+            if (typeFilter && typeFilter !== 'all') {
+                params.push(typeFilter);
+                conditions.push(`n.type = $${params.length}`);
+                hasNodeFilter = true;
+            }
 
-        // Fetch Edges (Only if we have nodes)
-        const nodeIds = nodesResult.rows.map(n => n.id);
-        let edgesResult;
-        
-        if (nodeIds.length > 0) {
-            // We only want edges where BOTH source and target are in our filtered node list
-            edgesResult = await client.query(`
-                SELECT DISTINCT e.source_node_id as source, e.target_node_id as target, e.relationship as label 
-                FROM edges e
-                JOIN documents d ON e.document_id = d.id
-                ${edgeWhereClause}
-                AND e.source_node_id = ANY($${paramIndex})
-                AND e.target_node_id = ANY($${paramIndex})
-            `, [...params, nodeIds]);
-        } else {
-            edgesResult = { rows: [] };
-        }
+            if (searchQuery && searchQuery.trim() !== '') {
+                params.push(searchQuery);
+                conditions.push(`n.label ILIKE '%' || $${params.length} || '%'`);
+                hasNodeFilter = true;
+            }
 
-        // Metadata for dropdowns (unfiltered list)
-        const documentsResult = await client.query(`
-            SELECT DISTINCT d.filename FROM documents d JOIN nodes n ON n.document_id = d.id WHERE d.user_id = $1 ORDER BY d.filename
-        `, [userId]);
+            const whereClause = 'WHERE ' + conditions.join(' AND ');
 
-        const typesResult = await client.query(`
-            SELECT DISTINCT n.type FROM nodes n JOIN documents d ON n.document_id = d.id WHERE d.user_id = $1 ORDER BY n.type
-        `, [userId]);
+            console.log("🔍 Graph Query:", { whereClause, params });
 
-        return {
-            nodes: nodesResult.rows.map(n => ({
+            // Fetch base nodes
+            const baseNodesResult = await client.query(`
+                SELECT DISTINCT n.id, n.label, n.type, d.filename
+                FROM nodes n
+                JOIN documents d ON n.document_id = d.id
+                ${whereClause}
+                LIMIT 500
+            `, params);
+
+            let finalNodes = baseNodesResult.rows;
+            const finalNodeIds = new Set<string>(finalNodes.map(n => n.id));
+
+            console.log(`✅ Base nodes found: ${finalNodes.length}`);
+
+            // Neighbor expansion (only if we have a filter and some results)
+            if (hasNodeFilter && finalNodes.length > 0 && finalNodes.length < 100) {
+                try {
+                    const baseIds = Array.from(finalNodeIds);
+
+                    // Simpler neighbor query without the problematic != ALL syntax
+                    const neighborsResult = await client.query(`
+                        SELECT DISTINCT n.id, n.label, n.type, d.filename
+                        FROM nodes n
+                        JOIN documents d ON n.document_id = d.id
+                        WHERE d.user_id = $1
+                        AND n.id IN (
+                            SELECT CASE WHEN e.source_node_id = ANY($2) THEN e.target_node_id ELSE e.source_node_id END
+                            FROM edges e
+                            WHERE e.source_node_id = ANY($2) OR e.target_node_id = ANY($2)
+                        )
+                        AND NOT (n.id = ANY($2))
+                        LIMIT 200
+                    `, [userId, baseIds]);
+
+                    if (neighborsResult.rows.length > 0) {
+                        console.log(`🧠 Found ${neighborsResult.rows.length} neighbor nodes`);
+                        finalNodes = [...finalNodes, ...neighborsResult.rows];
+                        neighborsResult.rows.forEach(n => finalNodeIds.add(n.id));
+                    }
+                } catch (neighborErr) {
+                    console.error("Neighbor expansion failed (non-critical):", neighborErr);
+                    // Continue without neighbors
+                }
+            }
+
+            // Fetch edges
+            if (finalNodes.length > 0) {
+                const allNodeIds = Array.from(finalNodeIds);
+
+                const edgesResult = await client.query(`
+                    SELECT DISTINCT e.source_node_id as source, e.target_node_id as target, e.relationship as label 
+                    FROM edges e
+                    JOIN documents d ON e.document_id = d.id
+                    WHERE d.user_id = $1
+                    AND e.source_node_id = ANY($2)
+                    AND e.target_node_id = ANY($2)
+                `, [userId, allNodeIds]);
+
+                graphLinks = edgesResult.rows;
+                console.log(`✅ Edges found: ${graphLinks.length}`);
+            }
+
+            // Map nodes to output format
+            graphNodes = finalNodes.map(n => ({
                 id: n.id,
                 name: n.label,
                 group: n.type,
                 document: n.filename,
                 val: 5
-            })),
-            links: edgesResult.rows,
-            documents: documentsResult.rows.map(d => d.filename),
-            types: typesResult.rows.map(t => t.type)
-        };
+            }));
 
-    } catch (error) {
-        console.error("Graph Fetch Failed:", error);
-        return { nodes: [], links: [], documents: [], types: [] };
+        } catch (graphErr) {
+            console.error("Graph query failed:", graphErr);
+            executionError = graphErr instanceof Error ? graphErr.message : "Graph query error";
+            // Graph fails but metadata is preserved
+        }
+
+    } catch (connectionErr) {
+        console.error("Database connection failed:", connectionErr);
+        executionError = "Database connection failed";
     } finally {
-        await client.end();
+        try {
+            await client.end();
+        } catch {
+            // Ignore close errors
+        }
     }
+
+    return {
+        nodes: graphNodes,
+        links: graphLinks,
+        documents: documents,
+        types: types,
+        rateLimited: false,
+        error: executionError
+    };
 }
