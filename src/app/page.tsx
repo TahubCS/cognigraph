@@ -3,10 +3,11 @@ import { auth } from '@clerk/nextjs/server';
 import { Toaster } from 'react-hot-toast';
 import { getUserSettings } from '@/actions/user';
 import HeroSection from '@/components/landing/HeroSection';
-import Dashboard from '@/components/Dashboard'; // We now use the new component
+import Dashboard from '@/components/Dashboard';
+import Navbar from '@/components/landing/Navbar';
 
 export default async function Home() {
-  await auth(); 
+  await auth();
   const settings = await getUserSettings();
 
   return (
@@ -21,7 +22,8 @@ export default async function Home() {
 
       {/* 1. Signed Out View */}
       <SignedOut>
-         <HeroSection />
+        <Navbar />
+        <HeroSection />
       </SignedOut>
 
       {/* 2. Signed In View - Loads the Interactive Dashboard */}

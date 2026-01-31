@@ -215,6 +215,7 @@ def generate_embedding(text):
 
 def extract_graph_from_text(text, document_id, conn, domain="general"):
     logger.info(f"🕸️ Extracting Knowledge Graph (Mode: {domain.upper()})...")
+
     
     strategy = STRATEGIES.get(domain, STRATEGIES["general"])
     
@@ -241,42 +242,69 @@ def extract_graph_from_text(text, document_id, conn, domain="general"):
             response_format={"type": "json_object"}
         )
         
-        graph_data = json.loads(response.choices[0].message.content)
+        content = response.choices[0].message.content
+        if not content:
+            raise ValueError("Empty response from OpenAI")
+
+        graph_data = json.loads(content)
         
         # Save Nodes
         node_map = {}
         for node in graph_data.get('nodes', []):
-            cur = conn.execute(
-                """
-                INSERT INTO nodes (document_id, label, type) 
-                VALUES (%s, %s, %s) 
-                ON CONFLICT (document_id, label) DO UPDATE SET type = EXCLUDED.type
-                RETURNING id;
-                """,
-                (document_id, node['label'], node['type'])
-            )
-            # Use fetchone() directly as row_factory=dict_row is set
-            node_id = cur.fetchone()['id']
-            node_map[node['label']] = node_id
+            # Clean label
+            label = node.get('label', '').strip()
+            if not label:
+                continue
+                
+            try:
+                cur = conn.execute(
+                    """
+                    INSERT INTO nodes (document_id, label, type) 
+                    VALUES (%s, %s, %s) 
+                    ON CONFLICT (document_id, label) DO UPDATE SET type = EXCLUDED.type
+                    RETURNING id;
+                    """,
+                    (document_id, label, node['type'])
+                )
+                row = cur.fetchone()
+                if row:
+                    node_map[label] = row['id']
+            except Exception as node_err:
+                logger.warning(f"⚠️ Node Insertion Error ({label}): {node_err}")
+                continue
             
         # Save Edges
         for edge in graph_data.get('edges', []):
-            source_id = node_map.get(edge['source'])
-            target_id = node_map.get(edge['target'])
+            source = edge.get('source', '').strip()
+            target = edge.get('target', '').strip()
+            
+            source_id = node_map.get(source)
+            target_id = node_map.get(target)
             
             if source_id and target_id:
-                conn.execute(
-                    """
-                    INSERT INTO edges (document_id, source_node_id, target_node_id, relationship)
-                    VALUES (%s, %s, %s, %s)
-                    """,
-                    (document_id, source_id, target_id, edge['relationship'])
-                )
+                try:
+                    conn.execute(
+                        """
+                        INSERT INTO edges (document_id, source_node_id, target_node_id, relationship)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        (document_id, source_id, target_id, edge['relationship'])
+                    )
+                except Exception as edge_err:
+                    logger.warning(f"⚠️ Edge Insertion Error: {edge_err}")
+                    continue
         
         logger.info(f"✅ Extracted {len(graph_data.get('nodes', []))} nodes and {len(graph_data.get('edges', []))} edges.")
+        return True
         
+    except json.JSONDecodeError as je:
+        logger.error(f"❌ JSON Decode Error: {je}")
+        # We might want to try to repair JSON here, but for now just fail hard so we know
+        raise je
     except Exception as e:
         logger.error(f"⚠️ Graph Extraction Error: {e}")
+        raise e
 
 def process_file_logic(file_key: str, document_id: str):
     # Get a connection from the pool
@@ -313,7 +341,8 @@ def process_file_logic(file_key: str, document_id: str):
                 )
 
             # 5. Extract Graph
-            extract_graph_from_text(full_text, document_id, conn, domain)
+            if not extract_graph_from_text(full_text, document_id, conn, domain):
+                raise Exception("Graph extraction failed")
 
             # 6. Complete
             conn.execute("UPDATE documents SET status = 'COMPLETED' WHERE id = %s", (document_id,))

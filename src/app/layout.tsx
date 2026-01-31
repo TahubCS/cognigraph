@@ -1,6 +1,16 @@
 import { ClerkProvider } from '@clerk/nextjs'
-// @ts-expect-error: allow css import without types
+import { Geist, Geist_Mono } from "next/font/google";
 import './globals.css'
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
 
 export default function RootLayout({
   children,
@@ -10,7 +20,10 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en" suppressHydrationWarning>
-        <body suppressHydrationWarning>
+        <body
+          className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+          suppressHydrationWarning
+        >
           {/* ❌ DO NOT ADD A HEADER HERE - Dashboard has its own */}
           {/* The old code probably had something like:
           <header>
@@ -18,7 +31,7 @@ export default function RootLayout({
             <UserButton />
           </header>
           */}
-          
+
           {/* ✅ JUST RENDER CHILDREN - no wrapper headers */}
           {children}
         </body>

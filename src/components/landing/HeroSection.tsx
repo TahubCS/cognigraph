@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, Sparkles, Search, ArrowRight, Brain, CheckCircle2 } from 'lucide-react';
+import { FileText, Search, ArrowRight, Brain, Zap, Share2, Layers } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 
 // --- CONFIGURATION ---
 const QUESTIONS = [
@@ -13,50 +14,71 @@ const QUESTIONS = [
     "What are the side effects of this medication?"
 ];
 
-// ⚠️ REPLACE THIS WITH YOUR ACTUAL GITHUB URL
-const GITHUB_URL = "https://github.com/your-username/your-repo-name";
-
-// --- SMOOTH ANIMATION VARIANTS ---
-// Fix: Explicitly type this as a tuple of 4 numbers to satisfy Framer Motion types
-const smoothEase: [number, number, number, number] = [0.6, 0.05, 0.01, 0.9];
+const GITHUB_URL = "https://github.com/TahubCS/CogniGraph";
 
 // --- COMPONENTS ---
 
-// 1. The "Neural Field" Background - SMOOTHER
-function NeuralBackground() {
-    const [nodes, setNodes] = useState<Array<{ id: number; x: number; y: number; duration: number; delay: number }>>([]);
+function BackgroundNodes() {
+    const [nodes, setNodes] = useState<Array<{ id: number; x: number; y: number }>>([]);
 
     useEffect(() => {
-        const timer = setTimeout(() => {
-            const newNodes = Array.from({ length: 20 }).map((_, i) => ({
-                id: i,
-                x: Math.random() * 100,
-                y: Math.random() * 100,
-                duration: 15 + Math.random() * 15, // Longer, smoother cycles
-                delay: Math.random() * 5,
-            }));
-            setNodes(newNodes);
-        }, 0);
-        return () => clearTimeout(timer);
+        // Create a fixed set of nodes
+        setNodes(Array.from({ length: 15 }).map((_, i) => ({
+            id: i,
+            x: Math.random() * 100,
+            y: Math.random() * 100,
+        })));
     }, []);
 
+    const ImmersiveIngestionCycle = dynamic(
+        () => import("./ImmersiveIngestionCycle"),
+        { ssr: false }
+    );
+
     return (
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+            {/* Ambient Gradient Blobs */}
+            <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-500/10 rounded-full blur-[120px]" />
+            <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-purple-500/10 rounded-full blur-[120px]" />
+
+            {/* Nodes & Connections */}
+            <svg className="absolute inset-0 w-full h-full opacity-20">
+                {nodes.map((node, i) => (
+                    nodes.map((target, j) => {
+                        if (i >= j) return null; // Avoid duplicates
+                        const dist = Math.hypot(node.x - target.x, node.y - target.y);
+                        if (dist > 30) return null; // Only connect close nodes
+                        return (
+                            <motion.line
+                                key={`${i}-${j}`}
+                                x1={`${node.x}%`}
+                                y1={`${node.y}%`}
+                                x2={`${target.x}%`}
+                                y2={`${target.y}%`}
+                                stroke="white"
+                                strokeWidth="1"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: [0.1, 0.3, 0.1] }}
+                                transition={{ duration: 3 + Math.random() * 2, repeat: Infinity, delay: Math.random() * 2 }}
+                            />
+                        );
+                    })
+                ))}
+            </svg>
+
             {nodes.map((node) => (
                 <motion.div
                     key={node.id}
-                    className="absolute w-1 h-1 bg-zinc-700/30 rounded-full"
-                    style={{ willChange: 'transform, opacity' }}
-                    initial={{ x: `${node.x}%`, y: `${node.y}%`, opacity: 0 }}
+                    className="absolute w-1.5 h-1.5 bg-blue-400/50 rounded-full"
+                    style={{ left: `${node.x}%`, top: `${node.y}%` }}
                     animate={{
-                        y: [`${node.y}%`, `${node.y - 10}%`, `${node.y}%`],
-                        opacity: [0, 0.6, 0],
+                        scale: [1, 1.5, 1],
+                        opacity: [0.3, 0.7, 0.3],
                     }}
                     transition={{
-                        duration: node.duration,
+                        duration: 4 + Math.random() * 3,
                         repeat: Infinity,
-                        ease: "easeInOut",
-                        delay: node.delay,
+                        delay: Math.random() * 2,
                     }}
                 />
             ))}
@@ -64,162 +86,129 @@ function NeuralBackground() {
     );
 }
 
-// 2. The "Ingestion Engine" Demo - BUTTERY SMOOTH
-function IngestionDemo() {
-    const [status, setStatus] = useState<'idle' | 'uploading' | 'chunking' | 'indexing' | 'complete'>('idle');
+function ImmersiveIngestionCycle() {
+    const [step, setStep] = useState(0); // 0: Idle, 1: Upload, 2: Chunk, 3: Connect
 
     useEffect(() => {
-        let mounted = true;
-        const cycle = async () => {
-            if (!mounted) return;
-            setStatus('idle');
-            await new Promise(r => setTimeout(r, 2000));
-            if (!mounted) return;
-            setStatus('uploading');
-            await new Promise(r => setTimeout(r, 1200));
-            if (!mounted) return;
-            setStatus('chunking');
-            await new Promise(r => setTimeout(r, 1800));
-            if (!mounted) return;
-            setStatus('indexing');
-            await new Promise(r => setTimeout(r, 2000));
-            if (!mounted) return;
-            setStatus('complete');
-            await new Promise(r => setTimeout(r, 3000));
-            if (mounted) cycle();
-        };
-        cycle();
-        return () => { mounted = false; };
+        const interval = setInterval(() => {
+            setStep((prev) => (prev + 1) % 4);
+        }, 3500);
+        return () => clearInterval(interval);
     }, []);
 
     return (
-        <div className="relative w-full max-w-md h-64 bg-zinc-900/50 backdrop-blur-sm border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col items-center justify-center p-8">
-            
-            {/* Central "Brain" / Database - SMOOTH PULSE */}
-            <motion.div 
-                className="absolute"
-                animate={status === 'indexing' ? { 
-                    scale: [1, 1.15, 1],
-                    filter: ["brightness(1)", "brightness(1.5)", "brightness(1)"]
-                } : {}}
-                transition={{ 
-                    repeat: Infinity, 
-                    duration: 2,
-                    ease: "easeInOut"
-                }}
-            >
-                <motion.div 
-                    className={`w-16 h-16 rounded-full flex items-center justify-center ${
-                        status === 'complete' 
-                            ? 'bg-green-500/20 text-green-400 border border-green-500/50' 
-                            : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
-                    }`}
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1/2 h-full hidden lg:flex items-center justify-center pointer-events-none z-10">
+            <div className="relative w-[500px] h-[500px]">
+                {/* Step 1: Document Floating */}
+                <motion.div
+                    className="absolute inset-0 flex items-center justify-center"
                     animate={{
-                        boxShadow: status === 'complete' 
-                            ? ["0 0 0 0 rgba(34, 197, 94, 0)", "0 0 0 20px rgba(34, 197, 94, 0)"]
-                            : "0 0 0 0 rgba(0, 0, 0, 0)"
+                        opacity: step === 1 ? 1 : 0,
+                        scale: step === 1 ? 1 : 0.8,
+                        y: step === 1 ? 0 : 20
                     }}
-                    transition={{ 
-                        duration: 1.5,
-                        ease: "easeOut",
-                        repeat: status === 'complete' ? Infinity : 0
-                    }}
+                    transition={{ duration: 0.5 }}
                 >
-                    {status === 'complete' ? <CheckCircle2 className="w-8 h-8" /> : <Brain className="w-8 h-8" />}
+                    <div className="w-24 h-32 bg-zinc-800 border border-zinc-700 rounded-lg flex items-center justify-center shadow-2xl relative overflow-hidden group">
+                        <div className="absolute inset-0 bg-blue-500/10" />
+                        <FileText className="w-10 h-10 text-zinc-400" />
+                        <motion.div
+                            className="absolute bottom-0 left-0 right-0 h-1 bg-blue-500"
+                            initial={{ width: "0%" }}
+                            animate={{ width: step === 1 ? "100%" : "0%" }}
+                            transition={{ duration: 2 }}
+                        />
+                    </div>
+                    <div className="absolute mt-40 text-sm font-mono text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full">
+                        Reading Document...
+                    </div>
                 </motion.div>
-            </motion.div>
 
-            {/* The File that transforms - SMOOTH ENTRANCE */}
-            <AnimatePresence mode="wait">
-                {status === 'uploading' && (
-                    <motion.div
-                        initial={{ y: 60, opacity: 0, scale: 0.3 }}
-                        animate={{ y: 0, opacity: 1, scale: 1 }}
-                        exit={{ y: -20, scale: 0, opacity: 0 }}
-                        transition={{ 
-                            type: "spring",
-                            damping: 20,
-                            stiffness: 150,
-                            opacity: { duration: 0.3 }
-                        }}
-                        className="absolute top-8 p-3 bg-blue-500/20 border border-blue-500/50 rounded-lg text-blue-400"
-                    >
-                        <FileText className="w-6 h-6" />
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* The "Chunks" (Particles) - FLUID MOTION */}
-            {status === 'chunking' && (
-                <div className="absolute top-8 flex gap-1">
-                    {[1, 2, 3].map((i) => (
+                {/* Step 2: Chunking / Splitting */}
+                <motion.div
+                    className="absolute inset-0 flex items-center justify-center"
+                    animate={{
+                        opacity: step === 2 ? 1 : 0,
+                    }}
+                    transition={{ duration: 0.5 }}
+                >
+                    {[...Array(6)].map((_, i) => (
                         <motion.div
                             key={i}
-                            initial={{ y: 0, opacity: 1, scale: 1 }}
-                            animate={{ 
-                                y: 60,
-                                x: (i - 2) * 15,
-                                scale: 0.5,
-                                opacity: 0
-                            }}
-                            transition={{ 
-                                duration: 1.2,
-                                delay: i * 0.15,
-                                ease: smoothEase
-                            }}
-                            className="w-2 h-8 bg-blue-500 rounded-full"
-                            style={{ willChange: 'transform, opacity' }}
+                            className="absolute w-12 h-4 bg-zinc-800 border border-zinc-700 rounded-sm"
+                            initial={{ scale: 0.5, opacity: 0 }}
+                            animate={step === 2 ? {
+                                x: (Math.random() - 0.5) * 200,
+                                y: (Math.random() - 0.5) * 200,
+                                scale: 1,
+                                opacity: [0, 1, 0],
+                                rotate: Math.random() * 45
+                            } : {}}
+                            transition={{ duration: 2, ease: "easeOut" }}
                         />
                     ))}
-                </div>
-            )}
+                    <div className="absolute mt-40 text-sm font-mono text-purple-400 bg-purple-500/10 px-3 py-1 rounded-full">
+                        extract_chunks(size=512)
+                    </div>
+                </motion.div>
 
-            {/* Embedding Beams - SILKY SMOOTH - Updated Gradient Class */}
-            {status === 'indexing' && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                    {[1, 2, 3, 4].map((i) => (
-                        <motion.div
-                            key={i}
-                            className="absolute w-full h-px bg-linear-to-r from-transparent via-blue-500 to-transparent"
-                            style={{ 
-                                rotate: i * 45,
-                                willChange: 'transform, opacity'
-                            }}
-                            initial={{ scaleX: 0, opacity: 0 }}
-                            animate={{ 
-                                scaleX: [0, 1, 1, 0],
-                                opacity: [0, 0.8, 0.8, 0]
-                            }}
-                            transition={{ 
-                                duration: 2.5,
-                                repeat: Infinity,
-                                delay: i * 0.3,
-                                ease: "easeInOut"
-                            }}
-                        />
-                    ))}
-                </div>
-            )}
-            
-            {/* Status Text Label - SMOOTH FADE */}
-            <motion.div 
-                key={status}
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, ease: "easeOut" }}
-                className="absolute bottom-6 font-mono text-xs text-zinc-500 uppercase tracking-widest"
-            >
-                {status === 'idle' && "Waiting for data..."}
-                {status === 'uploading' && "Ingesting Document..."}
-                {status === 'chunking' && "Chunking & Embedding..."}
-                {status === 'indexing' && "Updating Knowledge Graph..."}
-                {status === 'complete' && "Ready to Answer."}
-            </motion.div>
+                {/* Step 3: Graph Construction */}
+                <motion.div
+                    className="absolute inset-0 flex items-center justify-center"
+                    animate={{
+                        opacity: step === 3 ? 1 : 0,
+                        scale: step === 3 ? 1 : 0.9
+                    }}
+                    transition={{ duration: 0.5 }}
+                >
+                    <div className="relative">
+                        <Brain className="w-24 h-24 text-zinc-700 absolute inset-0 m-auto opacity-20" />
+                        <svg className="w-64 h-64 overflow-visible">
+                            {[...Array(8)].map((_, i) => (
+                                <motion.circle
+                                    key={i}
+                                    cx={128 + Math.cos(i) * 80}
+                                    cy={128 + Math.sin(i) * 80}
+                                    r="6"
+                                    fill={i % 2 === 0 ? "#3b82f6" : "#a855f7"}
+                                    initial={{ scale: 0 }}
+                                    animate={step === 3 ? { scale: 1 } : { scale: 0 }}
+                                    transition={{ delay: i * 0.1 }}
+                                    suppressHydrationWarning={true}
+                                />
+                            ))}
+                            {[...Array(8)].map((_, i) => (
+                                <motion.line
+                                    key={`l-${i}`}
+                                    x1="128"
+                                    y1="128"
+                                    x2={128 + Math.cos(i) * 80}
+                                    y2={128 + Math.sin(i) * 80}
+                                    stroke="url(#grad)"
+                                    strokeWidth="2"
+                                    strokeOpacity="0.5"
+                                    initial={{ pathLength: 0 }}
+                                    animate={step === 3 ? { pathLength: 1 } : { pathLength: 0 }}
+                                    transition={{ duration: 1, delay: i * 0.1 }}
+                                />
+                            ))}
+                            <defs>
+                                <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" stopColor="#3b82f6" />
+                                    <stop offset="100%" stopColor="#a855f7" />
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-8 text-sm font-mono text-green-400 bg-green-500/10 px-3 py-1 rounded-full whitespace-nowrap">
+                            Knowledge Graph Ready
+                        </div>
+                    </div>
+                </motion.div>
+            </div>
         </div>
     );
 }
 
-// 3. Typewriter Search Input - SMOOTHER CURSOR
 function TypewriterInput() {
     const [index, setIndex] = useState(0);
     const [displayText, setDisplayText] = useState("");
@@ -227,7 +216,7 @@ function TypewriterInput() {
 
     useEffect(() => {
         const currentQ = QUESTIONS[index];
-        const typeSpeed = isDeleting ? 30 : 50; 
+        const typeSpeed = isDeleting ? 30 : 50;
 
         const timeout = setTimeout(() => {
             if (!isDeleting && displayText !== currentQ) {
@@ -246,147 +235,100 @@ function TypewriterInput() {
     }, [displayText, isDeleting, index]);
 
     return (
-        <motion.div 
-            className="w-full max-w-xl mx-auto mt-8 relative group"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.3, ease: smoothEase }}
-        >
-            {/* Glow effect - Updated Gradient Class */}
-            <motion.div 
-                className="absolute -inset-1 bg-linear-to-r from-blue-600 to-purple-600 rounded-lg blur opacity-0 group-hover:opacity-50"
-                transition={{ duration: 0.6, ease: "easeInOut" }}
-            />
-            <div className="relative bg-zinc-900 border border-zinc-800 rounded-lg p-4 flex items-center shadow-xl">
-                <Search className="w-5 h-5 text-zinc-500 mr-3" />
-                <span className="text-zinc-300 font-medium text-lg">
+        <div className="w-full max-w-xl relative group">
+            <div className="absolute -inset-0.5 bg-linear-to-r from-blue-600 to-purple-600 rounded-xl blur opacity-30 group-hover:opacity-60 transition duration-500" />
+            <div className="relative bg-[#0F0F12] border border-zinc-800 rounded-xl p-4 flex items-center shadow-2xl">
+                <Search className="w-5 h-5 text-zinc-500 mr-4" />
+                <span className="text-zinc-300 font-medium text-lg font-mono">
                     {displayText}
                     <motion.span
-                        className="inline-block w-0.5 h-5 bg-blue-500 ml-0.5"
+                        className="inline-block w-2 h-5 bg-blue-500 ml-1 align-middle"
                         animate={{ opacity: [1, 1, 0, 0] }}
-                        transition={{
-                            duration: 1,
-                            repeat: Infinity,
-                            ease: "linear"
-                        }}
+                        transition={{ duration: 1, repeat: Infinity }}
                     />
                 </span>
             </div>
-        </motion.div>
+        </div>
     );
 }
 
-// --- MAIN HERO COMPONENT ---
-
 export default function HeroSection() {
-    const router = useRouter(); // Initialize router
+    const router = useRouter();
 
     return (
-        <section className="relative min-h-[80vh] flex flex-col items-center justify-center overflow-hidden bg-[#09090b] px-4 pt-20 pb-32">
-        
-            {/* 1. Background Animation */}
-            <NeuralBackground />
+        <section className="relative min-h-screen flex items-center overflow-hidden pt-20">
 
-            <div className="relative z-10 w-full max-w-5xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
-                
-                {/* Left Column: Copy & Input - SMOOTHER ENTRANCE */}
-                <div className="space-y-6 text-center lg:text-left">
+            {/* 1. Global Background Effects */}
+            <BackgroundNodes />
+
+            <div className="container mx-auto px-6 relative z-10 grid lg:grid-cols-2 gap-12">
+
+                {/* Left Column: Hero Content */}
+                <div className="max-w-3xl pt-10 lg:pt-0">
                     <motion.div
                         initial={{ opacity: 0, y: 30 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ 
-                            duration: 0.8,
-                            ease: smoothEase
-                        }}
+                        transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
                     >
-                        <motion.div 
-                            className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-medium mb-6"
-                            initial={{ opacity: 0, scale: 0.8 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            transition={{ 
-                                delay: 0.2,
-                                duration: 0.5,
-                                ease: smoothEase
-                            }}
-                        >
-                            <Sparkles className="w-3 h-3" />
-                            <span>Version 1.0 Live</span>
-                        </motion.div>
-                        
-                        <h1 className="text-4xl lg:text-6xl font-bold tracking-tight text-white mb-6">
-                            Chat with your <br/>
-                            {/* Updated Gradient Class */}
-                            <span className="text-transparent bg-clip-text bg-linear-to-r from-blue-400 to-purple-500">
-                                Institutional Knowledge
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-800/50 border border-zinc-700/50 text-zinc-300 text-xs font-medium mb-8 backdrop-blur-sm">
+                            <Zap className="w-3 h-3 text-yellow-500" />
+                            <span>AI-Powered Knowledge Retrieval</span>
+                        </div>
+
+                        <h1 className="text-5xl lg:text-7xl font-bold tracking-tight text-white mb-8 leading-[1.1]">
+                            Talk to your <br />
+                            <span className="text-transparent bg-clip-text bg-linear-to-r from-blue-400 via-purple-400 to-pink-400">
+                                Collective Intelligence
                             </span>
                         </h1>
-                        
-                        <p className="text-lg text-zinc-400 max-w-xl mx-auto lg:mx-0 leading-relaxed">
-                            Stop searching through folders. CogniGraph ingests your PDFs, Code, and Legal docs, turning them into an intelligent neural network you can talk to.
+
+                        <p className="text-xl text-zinc-400 max-w-xl leading-relaxed mb-10">
+                            Transform your scattered PDFs, Docs, and databases into a living Knowledge Graph. Stop searching, start understanding.
                         </p>
                     </motion.div>
 
-                    {/* Typewriter Input */}
                     <TypewriterInput />
-                    
-                    <motion.div 
-                        className="flex flex-col sm:flex-row items-center gap-4 mt-8 justify-center lg:justify-start"
+
+                    <motion.div
+                        className="flex flex-col sm:flex-row items-center gap-5 mt-12"
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.6, delay: 0.5, ease: smoothEase }}
+                        transition={{ duration: 0.6, delay: 0.4 }}
                     >
-                        {/* GET STARTED BUTTON -> Redirects to /sign-up */}
-                        <motion.button 
+                        <button
                             onClick={() => router.push('/sign-up')}
-                            className="px-8 py-3 bg-white text-black font-semibold rounded-lg flex items-center gap-2 group overflow-hidden relative"
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.98 }}
-                            transition={{ type: "spring", damping: 15, stiffness: 300 }}
+                            className="px-8 py-4 bg-white text-black text-lg font-semibold rounded-full flex items-center gap-2 hover:bg-zinc-200 transition-all hover:scale-105 active:scale-95"
                         >
-                            <span className="relative z-10">Get Started</span>
-                            <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 relative z-10" />
-                            <motion.div
-                                className="absolute inset-0 bg-zinc-200"
-                                initial={{ x: "-100%" }}
-                                whileHover={{ x: 0 }}
-                                transition={{ duration: 0.3 }}
-                            />
-                        </motion.button>
-                        
-                        {/* DOCUMENTATION BUTTON -> Opens GitHub in new tab */}
-                        <motion.button 
+                            Start for free
+                            <ArrowRight className="w-5 h-5" />
+                        </button>
+
+                        <button
                             onClick={() => window.open(GITHUB_URL, '_blank')}
-                            className="px-8 py-3 bg-zinc-900 border border-zinc-800 text-zinc-300 font-medium rounded-lg"
-                            whileHover={{ 
-                                backgroundColor: "rgb(39, 39, 42)",
-                                borderColor: "rgb(63, 63, 70)",
-                                scale: 1.02
-                            }}
-                            whileTap={{ scale: 0.98 }}
-                            transition={{ duration: 0.2, ease: "easeOut" }}
+                            className="px-8 py-4 bg-zinc-900/50 border border-zinc-800 text-zinc-300 text-lg font-medium rounded-full hover:bg-zinc-800 transition-all backdrop-blur-sm"
                         >
-                            View Documentation
-                        </motion.button>
+                            View the Code
+                        </button>
                     </motion.div>
+
+                    <div className="mt-16 flex items-center gap-8 text-zinc-500">
+                        <div className="flex items-center gap-2">
+                            <Share2 className="w-5 h-5" />
+                            <span className="text-sm">Connect any data source</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Layers className="w-5 h-5" />
+                            <span className="text-sm">Auto-generated Graphs</span>
+                        </div>
+                    </div>
                 </div>
 
-                {/* Right Column: Visual Animation - SMOOTH ENTRANCE */}
-                <motion.div
-                    initial={{ opacity: 0, scale: 0.85, y: 20 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    transition={{ 
-                        duration: 1,
-                        delay: 0.3,
-                        ease: smoothEase
-                    }}
-                    className="flex justify-center"
-                >
-                    <IngestionDemo />
-                </motion.div>
+                {/* Right Column: Immersive Animation Overlay */}
+                <ImmersiveIngestionCycle />
             </div>
-            
-            {/* Bottom Fade - Updated Gradient Class */}
-            <div className="absolute bottom-0 left-0 right-0 h-24 bg-linear-to-t from-[#09090b] to-transparent pointer-events-none" />
+
+            {/* Bottom Gradient Fade */}
+            <div className="absolute bottom-0 left-0 right-0 h-40 bg-linear-to-t from-[#0F0F12] to-transparent pointer-events-none z-20" />
         </section>
     );
 }
