@@ -167,8 +167,8 @@ function ImmersiveIngestionCycle() {
                             {[...Array(8)].map((_, i) => (
                                 <motion.circle
                                     key={i}
-                                    cx={128 + Math.cos(i) * 80}
-                                    cy={128 + Math.sin(i) * 80}
+                                    cx={(128 + Math.cos(i) * 80).toFixed(4)}
+                                    cy={(128 + Math.sin(i) * 80).toFixed(4)}
                                     r="6"
                                     fill={i % 2 === 0 ? "#3b82f6" : "#a855f7"}
                                     initial={{ scale: 0 }}
@@ -182,14 +182,15 @@ function ImmersiveIngestionCycle() {
                                     key={`l-${i}`}
                                     x1="128"
                                     y1="128"
-                                    x2={128 + Math.cos(i) * 80}
-                                    y2={128 + Math.sin(i) * 80}
+                                    x2={(128 + Math.cos(i) * 80).toFixed(4)}
+                                    y2={(128 + Math.sin(i) * 80).toFixed(4)}
                                     stroke="url(#grad)"
                                     strokeWidth="2"
                                     strokeOpacity="0.5"
                                     initial={{ pathLength: 0 }}
                                     animate={step === 3 ? { pathLength: 1 } : { pathLength: 0 }}
                                     transition={{ duration: 1, delay: i * 0.1 }}
+                                    suppressHydrationWarning={true}
                                 />
                             ))}
                             <defs>
