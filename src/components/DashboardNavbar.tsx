@@ -1,9 +1,10 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { UserButton } from '@clerk/nextjs';
 import {
-    Settings2, Network, MessageSquare, Columns,
+    Settings2,
     PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 import { SiGrapheneos } from "react-icons/si";
@@ -13,8 +14,6 @@ interface DashboardNavbarProps {
     leftSidebarOpen: boolean;
     onToggleLeftSidebar: () => void;
     onOpenModeSelector: () => void;
-    activeView: 'graph' | 'chat' | 'split';
-    onViewChange: (view: 'graph' | 'chat' | 'split') => void;
 }
 
 function WorkspaceBadge({ onOpen }: { onOpen: () => void }) {
@@ -41,9 +40,13 @@ export default function DashboardNavbar({
     leftSidebarOpen,
     onToggleLeftSidebar,
     onOpenModeSelector,
-    activeView,
-    onViewChange
 }: DashboardNavbarProps) {
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
     return (
         <motion.nav
             className="shrink-0 h-14 border-b border-white/10 bg-zinc-950/80 backdrop-blur-xl flex items-center justify-between px-6 z-50"
@@ -81,57 +84,19 @@ export default function DashboardNavbar({
 
             {/* Right Side: Controls */}
             <div className="flex items-center gap-3">
-                {/* View Toggle - Segmented Control */}
-                <div className="flex items-center gap-0.5 bg-zinc-900/50 rounded-lg p-1 border border-white/5">
-                    <button
-                        onClick={() => onViewChange('graph')}
-                        className={`px-2.5 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all ${activeView === 'graph'
-                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25'
-                            : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                            }`}
-                        title="Graph View (G)"
-                    >
-                        <Network className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Graph</span>
-                    </button>
-                    <button
-                        onClick={() => onViewChange('split')}
-                        className={`px-2.5 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all ${activeView === 'split'
-                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25'
-                            : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                            }`}
-                        title="Split View (S)"
-                    >
-                        <Columns className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Split</span>
-                    </button>
-                    <button
-                        onClick={() => onViewChange('chat')}
-                        className={`px-2.5 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all ${activeView === 'chat'
-                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25'
-                            : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                            }`}
-                        title="Chat View (C)"
-                    >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Chat</span>
-                    </button>
-                </div>
-
-                {/* Divider */}
-                <div className="h-5 w-px bg-zinc-800" />
-
                 {/* Workspace Badge */}
                 <WorkspaceBadge onOpen={onOpenModeSelector} />
 
-                {/* User Button */}
-                <UserButton
-                    appearance={{
-                        elements: {
-                            avatarBox: "w-8 h-8 ring-2 ring-zinc-700/50 hover:ring-blue-500/50 transition-all"
-                        }
-                    }}
-                />
+                {/* User Button - only render after mount to prevent hydration mismatch */}
+                {mounted && (
+                    <UserButton
+                        appearance={{
+                            elements: {
+                                avatarBox: "w-8 h-8 ring-2 ring-zinc-700/50 hover:ring-blue-500/50 transition-all"
+                            }
+                        }}
+                    />
+                )}
             </div>
         </motion.nav>
     );

@@ -12,6 +12,7 @@ import NodeDetailsPanel from './NodeDetailsPanels';
 import { exportGraphAsPNG, exportGraphAsSVG } from '@/lib/export-utils';
 import toast from 'react-hot-toast';
 import { getNodeColor } from '@/lib/node-colors';
+import { useTransition } from './TransitionContext';
 
 // 1. Dynamic Import (No SSR)
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
@@ -84,11 +85,17 @@ export default function GraphVisualization() {
     const graphRef = useRef<any>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
+    // Get transition state to pause observer during layout transitions
+    const { isTransitioning } = useTransition();
+
     // --- 1. RESIZE OBSERVER ---
     useEffect(() => {
         if (!containerRef.current) return;
 
         const resizeObserver = new ResizeObserver((entries) => {
+            // Skip updates during sidebar transition to prevent lag
+            if (isTransitioning) return;
+
             requestAnimationFrame(() => {
                 for (const entry of entries) {
                     if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
@@ -103,7 +110,7 @@ export default function GraphVisualization() {
 
         resizeObserver.observe(containerRef.current);
         return () => resizeObserver.disconnect();
-    }, []);
+    }, [isTransitioning]);
 
     // --- 2. DATA LOADING ---
     const loadGraph = useCallback(async () => {

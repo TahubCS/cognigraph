@@ -16,14 +16,17 @@ import DocumentExport from '@/components/DocumentExport';
 import ModeSelector from '@/components/ModeSelector';
 import DashboardNavbar from '@/components/DashboardNavbar';
 import DashboardBackground from '@/components/DashboardBackground';
+import StackedView from '@/components/StackedView';
 import { ModeProvider } from '@/components/ModeContext';
+import { TransitionProvider, useTransition } from '@/components/TransitionContext';
 import { Card } from '@/components/Card';
 
 interface DashboardProps {
     initialMode: string;
 }
 
-export default function Dashboard({ initialMode }: DashboardProps) {
+function DashboardContent({ initialMode }: DashboardProps) {
+    const { startTransition } = useTransition();
     const [showModeSelector, setShowModeSelector] = useState(false);
     const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
     const [activeView, setActiveView] = useState<'graph' | 'chat' | 'split'>('graph');
@@ -71,10 +74,11 @@ export default function Dashboard({ initialMode }: DashboardProps) {
                 {/* --- 1. GLOBAL HEADER --- */}
                 <DashboardNavbar
                     leftSidebarOpen={leftSidebarOpen}
-                    onToggleLeftSidebar={() => setLeftSidebarOpen(!leftSidebarOpen)}
+                    onToggleLeftSidebar={() => {
+                        startTransition(300); // Pause observers during 250ms animation + buffer
+                        setLeftSidebarOpen(!leftSidebarOpen);
+                    }}
                     onOpenModeSelector={() => setShowModeSelector(true)}
-                    activeView={activeView}
-                    onViewChange={setActiveView}
                 />
 
                 {/* Animated Background - Matching HeroSection */}
@@ -83,85 +87,66 @@ export default function Dashboard({ initialMode }: DashboardProps) {
                 {/* --- 2. MAIN LAYOUT GRID --- */}
                 <main className="flex-1 p-4 lg:p-6 min-h-0 overflow-hidden flex gap-4 relative z-10">
 
-                    {/* LEFT: Data Sources */}
-                    <AnimatePresence mode="wait">
-                        {leftSidebarOpen && (
-                            <motion.aside
-                                initial={{ width: 0, opacity: 0, x: -20 }}
-                                animate={{ width: 320, opacity: 1, x: 0 }}
-                                exit={{ width: 0, opacity: 0, x: -20 }}
-                                transition={{ duration: 0.3, ease: "easeInOut" }}
-                                className="flex flex-col gap-4 h-full min-h-0 shrink-0"
-                            >
-                                <div className="w-80 flex flex-col gap-4 h-full">
-                                    <Card title="Ingest Data" icon={UploadCloud} className="shrink-0">
-                                        <div className="p-4">
-                                            <FileUpload />
-                                        </div>
-                                    </Card>
-
-                                    <Card
-                                        title="Knowledge Base"
-                                        icon={Database}
-                                        className="flex-1 min-h-0"
-                                        action={<DocumentExport />}
-                                    >
-                                        <div className="h-full overflow-y-auto custom-scrollbar p-2">
-                                            <DocumentList />
-                                        </div>
-                                    </Card>
-                                </div>
-                            </motion.aside>
-                        )}
-                    </AnimatePresence>
-
-                    {/* CENTER: View Container - Graph, Chat, or Split */}
-                    <motion.section
-                        layout
-                        className="flex-1 h-full min-h-0 relative flex min-w-0 gap-4"
+                    {/* LEFT: Data Sources - Sliding Wipe Animation */}
+                    <div
+                        className="h-full shrink-0 overflow-hidden"
+                        style={{
+                            width: leftSidebarOpen ? 320 : 0,
+                            transition: 'width 300ms cubic-bezier(0.25, 1, 0.5, 1)', // Smooth easeOutQuint-ish
+                            contain: 'strict', // ISOLATE LAYOUT: Critical validation for perfs
+                            willChange: 'width',
+                        }}
                     >
-                        {/* Graph View */}
-                        <motion.div
-                            initial={false}
-                            animate={{
-                                opacity: showGraph ? 1 : 0,
-                                flex: activeView === 'split' ? 1 : (activeView === 'graph' ? 1 : 0),
-                            }}
-                            transition={{ duration: 0.3, ease: "easeOut" }}
-                            className="h-full min-w-0 overflow-hidden"
+                        <aside
+                            className="flex flex-col gap-4 h-full min-h-0 w-80"
                             style={{
-                                pointerEvents: showGraph ? 'auto' : 'none',
-                                display: showGraph ? 'block' : 'none'
+                                transform: leftSidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
+                                transition: 'transform 300ms cubic-bezier(0.25, 1, 0.5, 1)',
+                                opacity: leftSidebarOpen ? 1 : 0.5, // Fade slightly
+                                width: 320, // Explicit width
                             }}
                         >
-                            <Card className="h-full border-0! bg-zinc-900/30! overflow-hidden relative">
-                                <div className="absolute inset-0">
-                                    <GraphVisualization />
+                            <Card title="Ingest Data" icon={UploadCloud} className="shrink-0">
+                                <div className="p-4">
+                                    <FileUpload />
                                 </div>
                             </Card>
-                        </motion.div>
 
-                        {/* Chat View */}
-                        <motion.div
-                            initial={false}
-                            animate={{
-                                opacity: showChat ? 1 : 0,
-                                flex: activeView === 'split' ? 1 : (activeView === 'chat' ? 1 : 0),
-                            }}
-                            transition={{ duration: 0.3, ease: "easeOut" }}
-                            className="h-full min-w-0 overflow-hidden"
-                            style={{
-                                pointerEvents: showChat ? 'auto' : 'none',
-                                display: showChat ? 'block' : 'none'
-                            }}
-                        >
-                            <Card className="h-full border-0! bg-zinc-900/30! overflow-hidden relative">
-                                <div className="absolute inset-0">
-                                    <ChatInterface />
+                            <Card
+                                title="Knowledge Base"
+                                icon={Database}
+                                className="flex-1 min-h-0"
+                                action={<DocumentExport />}
+                            >
+                                <div className="h-full overflow-y-auto custom-scrollbar p-2">
+                                    <DocumentList />
                                 </div>
                             </Card>
-                        </motion.div>
-                    </motion.section>
+                        </aside>
+                    </div>
+
+                    {/* CENTER: Stacked File Folder View */}
+                    <div className="flex-1 min-w-0 h-full">
+                        <StackedView
+                            activeView={activeView}
+                            onViewChange={setActiveView}
+                        >
+                            {{
+                                chat: <ChatInterface />,
+                                split: (
+                                    <div className="h-full grid grid-cols-2 gap-2 p-2">
+                                        <div className="h-full overflow-hidden rounded-lg">
+                                            <GraphVisualization />
+                                        </div>
+                                        <div className="h-full overflow-hidden rounded-lg">
+                                            <ChatInterface />
+                                        </div>
+                                    </div>
+                                ),
+                                graph: <GraphVisualization />,
+                            }}
+                        </StackedView>
+                    </div>
 
                 </main>
 
@@ -195,5 +180,14 @@ export default function Dashboard({ initialMode }: DashboardProps) {
                 </AnimatePresence>
             </div>
         </ModeProvider>
+    );
+}
+
+// Wrapper component to provide TransitionContext
+export default function Dashboard({ initialMode }: DashboardProps) {
+    return (
+        <TransitionProvider>
+            <DashboardContent initialMode={initialMode} />
+        </TransitionProvider>
     );
 }

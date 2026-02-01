@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { FileText, Loader2, Trash2, CheckCircle, Clock, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { FileText, Loader2, Trash2, CheckCircle, Clock, XCircle, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import { getDocuments, deleteDocument } from '@/actions/documents';
+import { useMode } from './ModeContext';
+import { useTransition } from './TransitionContext';
 import toast from 'react-hot-toast';
 
 type Document = {
@@ -10,27 +12,44 @@ type Document = {
     filename: string;
     status: string;
     created_at: string;
+    domain?: string;
 };
 
 export default function DocumentList() {
+    const { activeMode } = useMode();
     const [documents, setDocuments] = useState<Document[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const [mounted, setMounted] = useState(false);
+
+    // Filter state: 'all' shows all docs, or filter by specific mode
+    const [filterMode, setFilterMode] = useState<string>('all');
 
     // Pagination State
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [pageSize, setPageSize] = useState(0); // 0 means "not calculated yet"
 
+    // Mount effect to prevent hydration mismatch
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    // Get transition state to pause observer during layout transitions
+    const { isTransitioning } = useTransition();
+
     const ROW_HEIGHT = 62; // Approx height of a file row including margin
-    const HEADER_FOOTER_HEIGHT = 54; // Space for pagination controls + padding
+    const HEADER_FOOTER_HEIGHT = 80; // Space for pagination controls + filter + padding
 
     // 1. Measure Available Space
     useEffect(() => {
         if (!containerRef.current) return;
 
         const observer = new ResizeObserver((entries) => {
+            // Skip updates during sidebar transition to prevent lag
+            if (isTransitioning) return;
+
             for (let entry of entries) {
                 const height = entry.contentRect.height;
                 // Calculate how many items fit
@@ -50,16 +69,16 @@ export default function DocumentList() {
 
         observer.observe(containerRef.current);
         return () => observer.disconnect();
-    }, []);
+    }, [isTransitioning]);
 
-    // 2. Load Documents (Depends on pageSize)
+    // 2. Load Documents (Depends on pageSize and filterMode)
     const loadDocuments = useCallback(async (isBackground = false) => {
         if (pageSize === 0) return; // Wait for measurement
 
         if (!isBackground) setIsLoading(true);
 
         try {
-            const { documents: docs, totalPages: total } = await getDocuments(page, pageSize);
+            const { documents: docs, totalPages: total } = await getDocuments(page, pageSize, filterMode);
             setDocuments(docs);
             setTotalPages(total);
         } catch (error) {
@@ -67,7 +86,7 @@ export default function DocumentList() {
         } finally {
             if (!isBackground) setIsLoading(false);
         }
-    }, [page, pageSize]);
+    }, [page, pageSize, filterMode]);
 
     // Initial Load & Polling (Only when pageSize is set)
     useEffect(() => {
@@ -161,6 +180,37 @@ export default function DocumentList() {
 
     return (
         <div ref={containerRef} className="w-full h-full flex flex-col min-h-0 relative">
+            {/* Filter Dropdown - only render after mount to prevent hydration issues */}
+            {mounted && (
+                <div className="flex items-center gap-2 pb-2 shrink-0">
+                    <Filter className="w-3 h-3 text-zinc-500" />
+                    <select
+                        value={filterMode}
+                        onChange={(e) => {
+                            setFilterMode(e.target.value);
+                            setPage(1); // Reset to page 1 when filter changes
+                        }}
+                        className="text-[10px] bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-zinc-300 focus:outline-none focus:ring-1 focus:ring-blue-500/50 cursor-pointer"
+                    >
+                        <option value="all">All Workspaces</option>
+                        <option value="general">General</option>
+                        <option value="legal">Legal</option>
+                        <option value="financial">Financial</option>
+                        <option value="medical">Medical</option>
+                        <option value="engineering">Engineering</option>
+                        <option value="sales">Sales</option>
+                        <option value="regulatory">Regulatory</option>
+                        <option value="journalism">Journalism</option>
+                        <option value="hr">HR</option>
+                    </select>
+                    {filterMode !== 'all' && (
+                        <span className="text-[9px] text-zinc-500 uppercase">
+                            Filtered
+                        </span>
+                    )}
+                </div>
+            )}
+
             {/* Loading State (initial or when pageSize is waiting) */}
             {(isLoading || pageSize === 0) && documents.length === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center bg-zinc-900/50 z-10">
@@ -171,17 +221,31 @@ export default function DocumentList() {
             {documents.length === 0 && !isLoading && pageSize > 0 ? (
                 <div className="flex flex-col items-center justify-center flex-1 text-zinc-500">
                     <FileText className="w-10 h-10 mb-2 text-zinc-700" />
-                    <p className="text-xs">No documents yet</p>
+                    <p className="text-xs">
+                        {filterMode === 'all'
+                            ? 'No documents yet'
+                            : `No documents in ${filterMode} workspace`
+                        }
+                    </p>
                 </div>
             ) : (
                 <>
                     {/* Documents Container - Flexible */}
-                    <div className="space-y-2 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
+                    <div
+                        className="space-y-2 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1"
+                        style={{
+                            contentVisibility: 'auto',
+                            containIntrinsicSize: '0 500px', // Estimate size to prevent jump
+                        }}
+                    >
                         {documents.map((doc) => (
                             <div
                                 key={doc.id}
                                 className="flex items-center justify-between p-2.5 bg-zinc-800/50 hover:bg-zinc-800 rounded-lg transition-colors border border-zinc-800/50"
-                                style={{ height: '54px' }}
+                                style={{
+                                    height: '54px',
+                                    contain: 'layout style paint' // Isolate item rendering
+                                }}
                             >
                                 <div className="flex items-center gap-2.5 flex-1 min-w-0">
                                     {getStatusIcon(doc.status)}

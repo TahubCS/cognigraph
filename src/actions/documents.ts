@@ -12,9 +12,9 @@ const s3Client = new S3Client({
     },
 });
 
-export async function getDocuments(page: number = 1, limit: number = 5) {
+export async function getDocuments(page: number = 1, limit: number = 5, mode?: string) {
     const { userId } = await auth();
-    
+
     if (!userId) {
         return { documents: [], totalPages: 0 };
     }
@@ -25,31 +25,62 @@ export async function getDocuments(page: number = 1, limit: number = 5) {
 
     try {
         await client.connect();
-        
+
         const offset = (page - 1) * limit;
 
+        // Build query based on whether mode filter is provided
+        let countQuery: string;
+        let docsQuery: string;
+        let countParams: (string | number)[];
+        let docsParams: (string | number)[];
+
+        if (mode && mode !== 'all') {
+            // Filter by mode
+            countQuery = `
+                SELECT COUNT(*) as count 
+                FROM documents 
+                WHERE user_id = $1 AND domain = $2
+            `;
+            countParams = [userId, mode];
+
+            docsQuery = `
+                SELECT id, filename, status, created_at, domain
+                FROM documents
+                WHERE user_id = $1 AND domain = $2
+                ORDER BY created_at DESC
+                LIMIT $3 OFFSET $4
+            `;
+            docsParams = [userId, mode, limit, offset];
+        } else {
+            // Get all documents
+            countQuery = `
+                SELECT COUNT(*) as count 
+                FROM documents 
+                WHERE user_id = $1
+            `;
+            countParams = [userId];
+
+            docsQuery = `
+                SELECT id, filename, status, created_at, domain
+                FROM documents
+                WHERE user_id = $1
+                ORDER BY created_at DESC
+                LIMIT $2 OFFSET $3
+            `;
+            docsParams = [userId, limit, offset];
+        }
+
         // 1. Get Total Count
-        const countResult = await client.query(`
-            SELECT COUNT(*) as count 
-            FROM documents 
-            WHERE user_id = $1
-        `, [userId]);
-        
+        const countResult = await client.query(countQuery, countParams);
         const totalDocs = parseInt(countResult.rows[0].count);
         const totalPages = Math.ceil(totalDocs / limit);
 
         // 2. Get Paginated Documents
-        const result = await client.query(`
-            SELECT id, filename, status, created_at
-            FROM documents
-            WHERE user_id = $1
-            ORDER BY created_at DESC
-            LIMIT $2 OFFSET $3
-        `, [userId, limit, offset]);
+        const result = await client.query(docsQuery, docsParams);
 
-        return { 
-            documents: result.rows, 
-            totalPages: totalPages > 0 ? totalPages : 1 
+        return {
+            documents: result.rows,
+            totalPages: totalPages > 0 ? totalPages : 1
         };
 
     } catch (error) {
@@ -62,7 +93,7 @@ export async function getDocuments(page: number = 1, limit: number = 5) {
 
 export async function deleteDocument(documentId: string) {
     const { userId } = await auth();
-    
+
     if (!userId) {
         return { success: false, error: "Not authenticated" };
     }
@@ -104,11 +135,11 @@ export async function deleteDocument(documentId: string) {
 
         // 3. Delete from Database (Clean Children First)
         // We removed the premature 'DELETE FROM documents' that was here
-        
+
         // A. Delete Graph Data (Nodes & Edges)
         await client.query('DELETE FROM edges WHERE document_id = $1', [documentId]);
         await client.query('DELETE FROM nodes WHERE document_id = $1', [documentId]);
-        
+
         // B. Delete Vector Data (Embeddings)
         await client.query('DELETE FROM embeddings WHERE document_id = $1', [documentId]);
 
@@ -120,7 +151,7 @@ export async function deleteDocument(documentId: string) {
 
         // ✅ FIX: Now using the filename variable
         console.log(`🗑️ DB: Clean cleanup complete for ${documentId} (${filename})`);
-        
+
         return { success: true };
 
     } catch (error) {
