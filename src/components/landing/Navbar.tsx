@@ -1,102 +1,50 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion, useScroll } from 'framer-motion';
-import { ArrowRight, Menu, X } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { SiGrapheneos } from "react-icons/si";
-import dynamic from 'next/dynamic';
+import { ArrowRight, Github, Menu, X } from 'lucide-react';
+import { SiGrapheneos } from 'react-icons/si';
+
+const GITHUB_URL = 'https://github.com/TahubCS/cognigraph';
 
 export default function Navbar() {
-    const [isScrolled, setIsScrolled] = useState(false);
-    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    const { scrollY } = useScroll();
-    const router = useRouter();
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { scrollY } = useScroll();
 
-    useEffect(() => {
-        return scrollY.onChange((latest) => {
-            setIsScrolled(latest > 50);
-        });
-    }, [scrollY]);
+  useEffect(() => scrollY.on('change', (latest) => setIsScrolled(latest > 24)), [scrollY]);
 
-    return (
-        <motion.nav
-            className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${isScrolled ? 'bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/50 py-3' : 'bg-transparent py-5'
-                }`}
-            initial={{ y: -100 }}
-            animate={{ y: 0 }}
-            transition={{ duration: 0.5 }}
-        >
-            <div className="container mx-auto px-6 flex items-center justify-between">
-
-                {/* Logo */}
-                <Link href="/" className="flex items-center gap-2 group">
-                    <div className="relative w-8 h-8 flex items-center justify-center bg-blue-500/10 rounded-lg group-hover:bg-blue-500/20 transition-colors">
-                        <SiGrapheneos className="w-5 h-5 text-blue-400" />
-                    </div>
-                    <span className="text-xl font-bold bg-clip-text text-transparent bg-linear-to-r from-white to-zinc-400">
-                        CogniGraph
-                    </span>
-                </Link>
-
-                {/* Desktop Links */}
-                <div className="hidden md:flex items-center gap-8">
-                    <Link href="#features" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">
-                        Capabilities
-                    </Link>
-                    <Link href="#pricing" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">
-                        Pricing
-                    </Link>
-                    <Link href="https://github.com/your-username/your-repo-name" target="_blank" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">
-                        Documentation
-                    </Link>
-                </div>
-
-                {/* Actions */}
-                <div className="hidden md:flex items-center gap-4">
-                    <Link href="/sign-in" className="text-sm font-medium text-zinc-300 hover:text-white transition-colors">
-                        Sign In
-                    </Link>
-
-                    <button
-                        onClick={() => router.push('/sign-up')}
-                        className="group relative px-5 py-2 rounded-full bg-white text-zinc-950 text-sm font-semibold hover:bg-zinc-200 transition-colors overflow-hidden"
-                    >
-                        <span className="relative z-10 flex items-center gap-1">
-                            Get Started
-                            <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-                        </span>
-                    </button>
-                </div>
-
-                {/* Mobile Menu Button */}
-                <button
-                    className="md:hidden text-zinc-400 hover:text-white"
-                    onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                >
-                    {mobileMenuOpen ? <X /> : <Menu />}
-                </button>
-            </div>
-
-            {/* Mobile Menu */}
-            {mobileMenuOpen && (
-                <motion.div
-                    initial={{ opacity: 0, y: -20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="absolute top-full left-0 right-0 bg-zinc-950 border-b border-zinc-800 p-6 md:hidden flex flex-col gap-4 shadow-2xl"
-                >
-                    <Link href="#features" className="text-zinc-400 hover:text-white py-2">Capabilities</Link>
-                    <Link href="#pricing" className="text-zinc-400 hover:text-white py-2">Pricing</Link>
-                    <Link href="/sign-in" className="text-zinc-400 hover:text-white py-2">Sign In</Link>
-                    <button
-                        onClick={() => router.push('/sign-up')}
-                        className="w-full py-3 rounded-lg bg-blue-600 text-white font-medium center"
-                    >
-                        Get Started
-                    </button>
-                </motion.div>
-            )}
-        </motion.nav>
-    );
+  return (
+    <motion.header initial={{ y: -80 }} animate={{ y: 0 }} className={`fixed inset-x-0 top-0 z-50 border-b transition ${isScrolled || mobileMenuOpen ? 'border-white/10 bg-[#08090c]/90 backdrop-blur-xl' : 'border-transparent bg-transparent'}`}>
+      <nav className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-8 lg:px-12" aria-label="Primary navigation">
+        <Link href="/" className="focus-ring flex items-center gap-2.5 rounded-lg" aria-label="CogniGraph home">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-blue-400/20 bg-blue-400/10"><SiGrapheneos className="h-5 w-5 text-blue-300" aria-hidden="true" /></span>
+          <span className="text-lg font-semibold tracking-tight text-white">CogniGraph</span>
+        </Link>
+        <div className="hidden items-center gap-8 md:flex">
+          <Link href="#features" className="focus-ring rounded text-sm text-zinc-400 transition hover:text-white">Capabilities</Link>
+          <Link href="#workflow" className="focus-ring rounded text-sm text-zinc-400 transition hover:text-white">Workflow</Link>
+          <Link href={GITHUB_URL} target="_blank" rel="noreferrer" className="focus-ring flex items-center gap-1.5 rounded text-sm text-zinc-400 transition hover:text-white"><Github className="h-4 w-4" aria-hidden="true" /> GitHub</Link>
+        </div>
+        <div className="hidden items-center gap-4 md:flex">
+          <Link href="/sign-in" className="focus-ring rounded text-sm font-medium text-zinc-300 transition hover:text-white">Sign in</Link>
+          <Link href="/sign-up" className="focus-ring inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-blue-50">Get started <ArrowRight className="h-4 w-4" aria-hidden="true" /></Link>
+        </div>
+        <button type="button" className="focus-ring flex h-11 w-11 items-center justify-center rounded-lg text-zinc-300 hover:bg-white/10 md:hidden" onClick={() => setMobileMenuOpen((open) => !open)} aria-expanded={mobileMenuOpen} aria-controls="mobile-menu" aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}>
+          {mobileMenuOpen ? <X aria-hidden="true" /> : <Menu aria-hidden="true" />}
+        </button>
+      </nav>
+      {mobileMenuOpen && (
+        <motion.div id="mobile-menu" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="border-t border-white/10 bg-[#08090c] px-5 pb-6 pt-3 md:hidden">
+          <div className="mx-auto flex max-w-7xl flex-col">
+            <Link onClick={() => setMobileMenuOpen(false)} href="#features" className="focus-ring rounded-lg px-3 py-3 text-zinc-300 hover:bg-white/5">Capabilities</Link>
+            <Link onClick={() => setMobileMenuOpen(false)} href="#workflow" className="focus-ring rounded-lg px-3 py-3 text-zinc-300 hover:bg-white/5">Workflow</Link>
+            <Link href={GITHUB_URL} target="_blank" rel="noreferrer" className="focus-ring rounded-lg px-3 py-3 text-zinc-300 hover:bg-white/5">GitHub</Link>
+            <div className="mt-3 grid grid-cols-2 gap-3 border-t border-white/10 pt-5"><Link href="/sign-in" className="focus-ring rounded-full border border-white/15 px-4 py-3 text-center font-medium text-white">Sign in</Link><Link href="/sign-up" className="focus-ring rounded-full bg-white px-4 py-3 text-center font-semibold text-zinc-950">Get started</Link></div>
+          </div>
+        </motion.div>
+      )}
+    </motion.header>
+  );
 }

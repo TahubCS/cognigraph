@@ -86,7 +86,7 @@ export default function ChatInterface() {
                 setActiveNodeContext({ nodeName, nodeType, document });
 
                 // Build a context-rich prompt
-                let contextParts: string[] = [];
+                const contextParts: string[] = [];
 
                 if (document) {
                     contextParts.push(`from the file "${document}"`);

@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "db:setup": "tsx src/scripts/setup-db.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.18",

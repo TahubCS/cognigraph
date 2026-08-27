@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { FileText, Loader2, Trash2, CheckCircle, Clock, XCircle, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import { getDocuments, deleteDocument } from '@/actions/documents';
-import { useMode } from './ModeContext';
 import { useTransition } from './TransitionContext';
 import toast from 'react-hot-toast';
 
@@ -16,7 +15,6 @@ type Document = {
 };
 
 export default function DocumentList() {
-    const { activeMode } = useMode();
     const [documents, setDocuments] = useState<Document[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -50,7 +48,7 @@ export default function DocumentList() {
             // Skip updates during sidebar transition to prevent lag
             if (isTransitioning) return;
 
-            for (let entry of entries) {
+            for (const entry of entries) {
                 const height = entry.contentRect.height;
                 // Calculate how many items fit
                 const availableHeight = height - HEADER_FOOTER_HEIGHT;

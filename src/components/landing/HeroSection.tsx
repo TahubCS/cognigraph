@@ -1,335 +1,165 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, Search, ArrowRight, Brain, Zap, Share2, Layers } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic';
+import { motion, useReducedMotion } from 'framer-motion';
+import {
+  ArrowRight,
+  Braces,
+  Check,
+  FileText,
+  Github,
+  MessageSquareText,
+  Network,
+  Search,
+  Sparkles,
+} from 'lucide-react';
+import Link from 'next/link';
 
-// --- CONFIGURATION ---
-const QUESTIONS = [
-    "Summarize the liability clauses in this contract...",
-    "Find the revenue growth in Q3 report...",
-    "Check this code for security vulnerabilities...",
-    "What are the side effects of this medication?"
+const GITHUB_URL = 'https://github.com/TahubCS/cognigraph';
+
+const features = [
+  {
+    icon: FileText,
+    title: 'Ingest once',
+    description: 'Upload source material and turn unstructured documents into reusable knowledge.',
+  },
+  {
+    icon: Network,
+    title: 'See connections',
+    description: 'Explore entities and relationships in an interactive, navigable knowledge graph.',
+  },
+  {
+    icon: MessageSquareText,
+    title: 'Ask with context',
+    description: 'Get focused answers grounded in the material already inside your workspace.',
+  },
 ];
 
-const GITHUB_URL = "https://github.com/TahubCS/CogniGraph";
+const graphNodes = [
+  { x: 50, y: 50, r: 9, label: 'Research', tone: 'blue' },
+  { x: 24, y: 25, r: 6, label: 'Reports', tone: 'violet' },
+  { x: 78, y: 22, r: 7, label: 'Entities', tone: 'cyan' },
+  { x: 82, y: 68, r: 6, label: 'Insights', tone: 'violet' },
+  { x: 28, y: 77, r: 7, label: 'Sources', tone: 'cyan' },
+  { x: 53, y: 88, r: 5, label: 'Claims', tone: 'blue' },
+];
 
-// --- COMPONENTS ---
+const graphLinks = [[0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [1, 2], [3, 5], [4, 5]];
 
-function BackgroundNodes() {
-    const [nodes, setNodes] = useState<Array<{ id: number; x: number; y: number }>>([]);
+function ProductPreview() {
+  const reduceMotion = useReducedMotion();
 
-    useEffect(() => {
-        // Create a fixed set of nodes
-        setNodes(Array.from({ length: 15 }).map((_, i) => ({
-            id: i,
-            x: Math.random() * 100,
-            y: Math.random() * 100,
-        })));
-    }, []);
-
-    const ImmersiveIngestionCycle = dynamic(
-        () => import("./ImmersiveIngestionCycle"),
-        { ssr: false }
-    );
-
-    return (
-        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-            {/* Ambient Gradient Blobs */}
-            <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-500/10 rounded-full blur-[120px]" />
-            <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-purple-500/10 rounded-full blur-[120px]" />
-
-            {/* Nodes & Connections */}
-            <svg className="absolute inset-0 w-full h-full opacity-20">
-                {nodes.map((node, i) => (
-                    nodes.map((target, j) => {
-                        if (i >= j) return null; // Avoid duplicates
-                        const dist = Math.hypot(node.x - target.x, node.y - target.y);
-                        if (dist > 30) return null; // Only connect close nodes
-                        return (
-                            <motion.line
-                                key={`${i}-${j}`}
-                                x1={`${node.x}%`}
-                                y1={`${node.y}%`}
-                                x2={`${target.x}%`}
-                                y2={`${target.y}%`}
-                                stroke="white"
-                                strokeWidth="1"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: [0.1, 0.3, 0.1] }}
-                                transition={{ duration: 3 + Math.random() * 2, repeat: Infinity, delay: Math.random() * 2 }}
-                            />
-                        );
-                    })
-                ))}
+  return (
+    <motion.div
+      initial={reduceMotion ? false : { opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.7, delay: 0.2 }}
+      className="relative mx-auto w-full max-w-2xl"
+      aria-label="Preview of the CogniGraph knowledge workspace"
+    >
+      <div className="absolute -inset-10 rounded-full bg-blue-500/10 blur-3xl" />
+      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/80 shadow-2xl shadow-blue-950/30 backdrop-blur-xl">
+        <div className="flex h-12 items-center gap-2 border-b border-white/10 px-4">
+          <span className="h-2.5 w-2.5 rounded-full bg-rose-400/70" />
+          <span className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
+          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
+          <span className="ml-3 font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500">Knowledge workspace</span>
+        </div>
+        <div className="grid min-h-96 md:grid-cols-[1.35fr_1fr]">
+          <div className="relative min-h-72 border-b border-white/10 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.12),transparent_58%)] md:border-b-0 md:border-r">
+            <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full" role="img" aria-label="Connected research topics">
+              {graphLinks.map(([from, to]) => (
+                <line key={`${from}-${to}`} x1={graphNodes[from].x} y1={graphNodes[from].y} x2={graphNodes[to].x} y2={graphNodes[to].y} stroke="rgba(148,163,184,.28)" strokeWidth=".5" />
+              ))}
+              {graphNodes.map((node, index) => (
+                <g key={node.label}>
+                  <motion.circle
+                    cx={node.x} cy={node.y} r={node.r}
+                    fill={node.tone === 'blue' ? '#2563eb' : node.tone === 'violet' ? '#7c3aed' : '#0891b2'}
+                    initial={reduceMotion ? false : { scale: 0 }} animate={{ scale: 1 }}
+                    transition={{ delay: 0.45 + index * 0.08 }}
+                    style={{ transformOrigin: `${node.x}px ${node.y}px` }}
+                  />
+                  <text x={node.x} y={node.y + node.r + 6} textAnchor="middle" fill="#a1a1aa" fontSize="3.5">{node.label}</text>
+                </g>
+              ))}
             </svg>
-
-            {nodes.map((node) => (
-                <motion.div
-                    key={node.id}
-                    className="absolute w-1.5 h-1.5 bg-blue-400/50 rounded-full"
-                    style={{ left: `${node.x}%`, top: `${node.y}%` }}
-                    animate={{
-                        scale: [1, 1.5, 1],
-                        opacity: [0.3, 0.7, 0.3],
-                    }}
-                    transition={{
-                        duration: 4 + Math.random() * 3,
-                        repeat: Infinity,
-                        delay: Math.random() * 2,
-                    }}
-                />
-            ))}
-        </div>
-    );
-}
-
-function ImmersiveIngestionCycle() {
-    const [step, setStep] = useState(0); // 0: Idle, 1: Upload, 2: Chunk, 3: Connect
-
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setStep((prev) => (prev + 1) % 4);
-        }, 3500);
-        return () => clearInterval(interval);
-    }, []);
-
-    return (
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1/2 h-full hidden lg:flex items-center justify-center pointer-events-none z-10">
-            <div className="relative w-[500px] h-[500px]">
-                {/* Step 1: Document Floating */}
-                <motion.div
-                    className="absolute inset-0 flex items-center justify-center"
-                    animate={{
-                        opacity: step === 1 ? 1 : 0,
-                        scale: step === 1 ? 1 : 0.8,
-                        y: step === 1 ? 0 : 20
-                    }}
-                    transition={{ duration: 0.5 }}
-                >
-                    <div className="w-24 h-32 bg-zinc-800 border border-zinc-700 rounded-lg flex items-center justify-center shadow-2xl relative overflow-hidden group">
-                        <div className="absolute inset-0 bg-blue-500/10" />
-                        <FileText className="w-10 h-10 text-zinc-400" />
-                        <motion.div
-                            className="absolute bottom-0 left-0 right-0 h-1 bg-blue-500"
-                            initial={{ width: "0%" }}
-                            animate={{ width: step === 1 ? "100%" : "0%" }}
-                            transition={{ duration: 2 }}
-                        />
-                    </div>
-                    <div className="absolute mt-40 text-sm font-mono text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full">
-                        Reading Document...
-                    </div>
-                </motion.div>
-
-                {/* Step 2: Chunking / Splitting */}
-                <motion.div
-                    className="absolute inset-0 flex items-center justify-center"
-                    animate={{
-                        opacity: step === 2 ? 1 : 0,
-                    }}
-                    transition={{ duration: 0.5 }}
-                >
-                    {[...Array(6)].map((_, i) => (
-                        <motion.div
-                            key={i}
-                            className="absolute w-12 h-4 bg-zinc-800 border border-zinc-700 rounded-sm"
-                            initial={{ scale: 0.5, opacity: 0 }}
-                            animate={step === 2 ? {
-                                x: (Math.random() - 0.5) * 200,
-                                y: (Math.random() - 0.5) * 200,
-                                scale: 1,
-                                opacity: [0, 1, 0],
-                                rotate: Math.random() * 45
-                            } : {}}
-                            transition={{ duration: 2, ease: "easeOut" }}
-                        />
-                    ))}
-                    <div className="absolute mt-40 text-sm font-mono text-purple-400 bg-purple-500/10 px-3 py-1 rounded-full">
-                        extract_chunks(size=512)
-                    </div>
-                </motion.div>
-
-                {/* Step 3: Graph Construction */}
-                <motion.div
-                    className="absolute inset-0 flex items-center justify-center"
-                    animate={{
-                        opacity: step === 3 ? 1 : 0,
-                        scale: step === 3 ? 1 : 0.9
-                    }}
-                    transition={{ duration: 0.5 }}
-                >
-                    <div className="relative">
-                        <Brain className="w-24 h-24 text-zinc-700 absolute inset-0 m-auto opacity-20" />
-                        <svg className="w-64 h-64 overflow-visible">
-                            {[...Array(8)].map((_, i) => (
-                                <motion.circle
-                                    key={i}
-                                    cx={(128 + Math.cos(i) * 80).toFixed(4)}
-                                    cy={(128 + Math.sin(i) * 80).toFixed(4)}
-                                    r="6"
-                                    fill={i % 2 === 0 ? "#3b82f6" : "#a855f7"}
-                                    initial={{ scale: 0 }}
-                                    animate={step === 3 ? { scale: 1 } : { scale: 0 }}
-                                    transition={{ delay: i * 0.1 }}
-                                    suppressHydrationWarning={true}
-                                />
-                            ))}
-                            {[...Array(8)].map((_, i) => (
-                                <motion.line
-                                    key={`l-${i}`}
-                                    x1="128"
-                                    y1="128"
-                                    x2={(128 + Math.cos(i) * 80).toFixed(4)}
-                                    y2={(128 + Math.sin(i) * 80).toFixed(4)}
-                                    stroke="url(#grad)"
-                                    strokeWidth="2"
-                                    strokeOpacity="0.5"
-                                    initial={{ pathLength: 0 }}
-                                    animate={step === 3 ? { pathLength: 1 } : { pathLength: 0 }}
-                                    transition={{ duration: 1, delay: i * 0.1 }}
-                                    suppressHydrationWarning={true}
-                                />
-                            ))}
-                            <defs>
-                                <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="0%">
-                                    <stop offset="0%" stopColor="#3b82f6" />
-                                    <stop offset="100%" stopColor="#a855f7" />
-                                </linearGradient>
-                            </defs>
-                        </svg>
-                        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-8 text-sm font-mono text-green-400 bg-green-500/10 px-3 py-1 rounded-full whitespace-nowrap">
-                            Knowledge Graph Ready
-                        </div>
-                    </div>
-                </motion.div>
+            <span className="absolute left-4 top-4 rounded-full border border-blue-400/20 bg-blue-400/10 px-2.5 py-1 text-[10px] font-medium text-blue-300">6 concepts · 8 links</span>
+          </div>
+          <div className="flex flex-col p-5">
+            <div className="mb-5 flex items-center gap-2 text-xs font-medium text-zinc-300"><Sparkles className="h-4 w-4 text-violet-400" /> Ask your sources</div>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs leading-relaxed text-zinc-300">What connects the latest reports to our core research?</div>
+            <div className="mt-3 rounded-xl border border-blue-400/10 bg-blue-500/5 p-3 text-xs leading-relaxed text-zinc-400">
+              <div className="mb-2 flex items-center gap-1.5 font-medium text-blue-300"><Braces className="h-3.5 w-3.5" /> Synthesizing sources</div>
+              The reports reinforce three recurring themes across your research and link them to five supporting claims.
             </div>
+            <div className="mt-auto flex items-center gap-2 pt-5 text-[10px] text-zinc-500"><Check className="h-3.5 w-3.5 text-emerald-400" /> Grounded in your workspace</div>
+          </div>
         </div>
-    );
-}
-
-function TypewriterInput() {
-    const [index, setIndex] = useState(0);
-    const [displayText, setDisplayText] = useState("");
-    const [isDeleting, setIsDeleting] = useState(false);
-
-    useEffect(() => {
-        const currentQ = QUESTIONS[index];
-        const typeSpeed = isDeleting ? 30 : 50;
-
-        const timeout = setTimeout(() => {
-            if (!isDeleting && displayText !== currentQ) {
-                setDisplayText(currentQ.slice(0, displayText.length + 1));
-            } else if (isDeleting && displayText !== "") {
-                setDisplayText(currentQ.slice(0, displayText.length - 1));
-            } else if (!isDeleting && displayText === currentQ) {
-                setTimeout(() => setIsDeleting(true), 2000);
-            } else if (isDeleting && displayText === "") {
-                setIsDeleting(false);
-                setIndex((prev) => (prev + 1) % QUESTIONS.length);
-            }
-        }, typeSpeed);
-
-        return () => clearTimeout(timeout);
-    }, [displayText, isDeleting, index]);
-
-    return (
-        <div className="w-full max-w-xl relative group">
-            <div className="absolute -inset-0.5 bg-linear-to-r from-blue-600 to-purple-600 rounded-xl blur opacity-30 group-hover:opacity-60 transition duration-500" />
-            <div className="relative bg-[#0F0F12] border border-zinc-800 rounded-xl p-4 flex items-center shadow-2xl">
-                <Search className="w-5 h-5 text-zinc-500 mr-4" />
-                <span className="text-zinc-300 font-medium text-lg font-mono">
-                    {displayText}
-                    <motion.span
-                        className="inline-block w-2 h-5 bg-blue-500 ml-1 align-middle"
-                        animate={{ opacity: [1, 1, 0, 0] }}
-                        transition={{ duration: 1, repeat: Infinity }}
-                    />
-                </span>
-            </div>
-        </div>
-    );
+      </div>
+    </motion.div>
+  );
 }
 
 export default function HeroSection() {
-    const router = useRouter();
+  const reduceMotion = useReducedMotion();
 
-    return (
-        <section className="relative min-h-screen flex items-center overflow-hidden pt-20">
-
-            {/* 1. Global Background Effects */}
-            <BackgroundNodes />
-
-            <div className="container mx-auto px-6 relative z-10 grid lg:grid-cols-2 gap-12">
-
-                {/* Left Column: Hero Content */}
-                <div className="max-w-3xl pt-10 lg:pt-0">
-                    <motion.div
-                        initial={{ opacity: 0, y: 30 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-                    >
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-800/50 border border-zinc-700/50 text-zinc-300 text-xs font-medium mb-8 backdrop-blur-sm">
-                            <Zap className="w-3 h-3 text-yellow-500" />
-                            <span>AI-Powered Knowledge Retrieval</span>
-                        </div>
-
-                        <h1 className="text-5xl lg:text-7xl font-bold tracking-tight text-white mb-8 leading-[1.1]">
-                            Talk to your <br />
-                            <span className="text-transparent bg-clip-text bg-linear-to-r from-blue-400 via-purple-400 to-pink-400">
-                                Collective Intelligence
-                            </span>
-                        </h1>
-
-                        <p className="text-xl text-zinc-400 max-w-xl leading-relaxed mb-10">
-                            Transform your scattered PDFs, Docs, and databases into a living Knowledge Graph. Stop searching, start understanding.
-                        </p>
-                    </motion.div>
-
-                    <TypewriterInput />
-
-                    <motion.div
-                        className="flex flex-col sm:flex-row items-center gap-5 mt-12"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.6, delay: 0.4 }}
-                    >
-                        <button
-                            onClick={() => router.push('/sign-up')}
-                            className="px-8 py-4 bg-white text-black text-lg font-semibold rounded-full flex items-center gap-2 hover:bg-zinc-200 transition-all hover:scale-105 active:scale-95"
-                        >
-                            Start for free
-                            <ArrowRight className="w-5 h-5" />
-                        </button>
-
-                        <button
-                            onClick={() => window.open(GITHUB_URL, '_blank')}
-                            className="px-8 py-4 bg-zinc-900/50 border border-zinc-800 text-zinc-300 text-lg font-medium rounded-full hover:bg-zinc-800 transition-all backdrop-blur-sm"
-                        >
-                            View the Code
-                        </button>
-                    </motion.div>
-
-                    <div className="mt-16 flex items-center gap-8 text-zinc-500">
-                        <div className="flex items-center gap-2">
-                            <Share2 className="w-5 h-5" />
-                            <span className="text-sm">Connect any data source</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Layers className="w-5 h-5" />
-                            <span className="text-sm">Auto-generated Graphs</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Right Column: Immersive Animation Overlay */}
-                <ImmersiveIngestionCycle />
+  return (
+    <div className="overflow-hidden">
+      <section className="relative isolate flex min-h-screen items-center px-5 pb-20 pt-28 sm:px-8 lg:px-12" aria-labelledby="hero-heading">
+        <div className="absolute inset-0 -z-20 bg-[#08090c]" />
+        <div className="absolute inset-0 -z-10 bg-[linear-gradient(rgba(255,255,255,.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.025)_1px,transparent_1px)] bg-size-[48px_48px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]" />
+        <div className="absolute left-[8%] top-28 -z-10 h-72 w-72 rounded-full bg-blue-600/15 blur-[110px]" />
+        <div className="mx-auto grid w-full max-w-7xl items-center gap-16 lg:grid-cols-[.9fr_1.1fr]">
+          <motion.div initial={reduceMotion ? false : { opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65 }}>
+            <p className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-400/20 bg-blue-400/8 px-3 py-1.5 text-xs font-semibold tracking-wide text-blue-300">
+              <Sparkles className="h-3.5 w-3.5" aria-hidden="true" /> Graph-enhanced retrieval
+            </p>
+            <h1 id="hero-heading" className="max-w-3xl text-balance text-5xl font-semibold leading-[1.02] tracking-[-0.045em] text-white sm:text-6xl lg:text-7xl">
+              Turn scattered documents into <span className="bg-linear-to-r from-blue-400 via-cyan-300 to-violet-400 bg-clip-text text-transparent">connected answers.</span>
+            </h1>
+            <p className="mt-7 max-w-xl text-pretty text-lg leading-8 text-zinc-400">
+              CogniGraph transforms your source material into an explorable knowledge graph, then grounds every AI conversation in the context that matters.
+            </p>
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+              <Link href="/sign-up" className="focus-ring inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-white px-6 font-semibold text-zinc-950 transition hover:bg-blue-50">
+                Build your graph <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </Link>
+              <Link href={GITHUB_URL} target="_blank" rel="noreferrer" className="focus-ring inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/5 px-6 font-semibold text-zinc-200 transition hover:border-white/25 hover:bg-white/10">
+                <Github className="h-4 w-4" aria-hidden="true" /> Explore the code
+              </Link>
             </div>
+            <ul className="mt-9 flex flex-wrap gap-x-6 gap-y-3 text-sm text-zinc-500" aria-label="Product highlights">
+              {['Source-grounded', 'Interactive graph', 'Exportable data'].map((item) => <li key={item} className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-400" aria-hidden="true" />{item}</li>)}
+            </ul>
+          </motion.div>
+          <ProductPreview />
+        </div>
+      </section>
 
-            {/* Bottom Gradient Fade */}
-            <div className="absolute bottom-0 left-0 right-0 h-40 bg-linear-to-t from-[#0F0F12] to-transparent pointer-events-none z-20" />
-        </section>
-    );
+      <section id="features" className="border-y border-white/8 bg-zinc-950 px-5 py-24 sm:px-8 lg:px-12" aria-labelledby="features-heading">
+        <div className="mx-auto max-w-7xl">
+          <div className="max-w-2xl">
+            <p className="font-mono text-xs uppercase tracking-[0.24em] text-blue-400">One connected workflow</p>
+            <h2 id="features-heading" className="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-4xl">From raw files to useful context.</h2>
+            <p className="mt-4 text-lg leading-8 text-zinc-400">A focused workspace for understanding a collection, not another place to lose information.</p>
+          </div>
+          <div className="mt-12 grid gap-4 md:grid-cols-3">
+            {features.map(({ icon: Icon, title, description }, index) => (
+              <article key={title} className="group rounded-2xl border border-white/10 bg-white/3 p-6 transition hover:-translate-y-1 hover:border-blue-400/25 hover:bg-white/5">
+                <div className="mb-8 flex items-center justify-between"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-400/10 text-blue-300"><Icon className="h-5 w-5" aria-hidden="true" /></span><span className="font-mono text-xs text-zinc-600">0{index + 1}</span></div>
+                <h3 className="text-xl font-semibold text-white">{title}</h3><p className="mt-3 leading-7 text-zinc-400">{description}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="workflow" className="bg-[#08090c] px-5 py-24 text-center sm:px-8" aria-labelledby="cta-heading">
+        <Search className="mx-auto h-6 w-6 text-blue-400" aria-hidden="true" />
+        <h2 id="cta-heading" className="mx-auto mt-5 max-w-2xl text-3xl font-semibold tracking-tight text-white sm:text-4xl">Find the signal hidden across your sources.</h2>
+        <p className="mx-auto mt-4 max-w-xl leading-7 text-zinc-400">Create a workspace, add your documents, and start exploring the relationships inside them.</p>
+        <Link href="/sign-up" className="focus-ring mt-8 inline-flex min-h-12 items-center gap-2 rounded-full bg-blue-500 px-6 font-semibold text-white transition hover:bg-blue-400">Get started <ArrowRight className="h-4 w-4" aria-hidden="true" /></Link>
+      </section>
+    </div>
+  );
 }
