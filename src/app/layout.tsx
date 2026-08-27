@@ -1,16 +1,18 @@
 import { ClerkProvider } from '@clerk/nextjs'
-import { Geist, Geist_Mono } from "next/font/google";
 import './globals.css'
+import type { Metadata, Viewport } from 'next'
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+export const metadata: Metadata = {
+  title: 'CogniGraph — Connected answers from your documents',
+  description: 'Transform documents into an explorable knowledge graph and ask AI questions grounded in your own sources.',
+  applicationName: 'CogniGraph',
+  keywords: ['knowledge graph', 'RAG', 'document intelligence', 'AI search'],
+};
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+export const viewport: Viewport = {
+  colorScheme: 'dark',
+  themeColor: '#08090c',
+};
 
 export default function RootLayout({
   children,
@@ -41,18 +43,9 @@ export default function RootLayout({
     >
       <html lang="en" suppressHydrationWarning>
         <body
-          className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+          className="antialiased"
           suppressHydrationWarning
         >
-          {/* ❌ DO NOT ADD A HEADER HERE - Dashboard has its own */}
-          {/* The old code probably had something like:
-          <header>
-            <h1>CogniGraph</h1>
-            <UserButton />
-          </header>
-          */}
-
-          {/* ✅ JUST RENDER CHILDREN - no wrapper headers */}
           {children}
         </body>
       </html>

@@ -290,7 +290,7 @@ export default function GraphVisualization() {
                                     )}
                                     {searchQuery && (
                                         <span className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded flex items-center gap-1">
-                                            "{searchQuery}" <X className="w-3 h-3 cursor-pointer hover:text-white pointer-events-auto" onClick={() => setSearchQuery('')} />
+                                            &ldquo;{searchQuery}&rdquo; <X className="w-3 h-3 cursor-pointer hover:text-white pointer-events-auto" onClick={() => setSearchQuery('')} />
                                         </span>
                                     )}
                                 </div>

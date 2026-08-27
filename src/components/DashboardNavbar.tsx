@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { UserButton } from '@clerk/nextjs';
 import {
@@ -41,15 +40,9 @@ export default function DashboardNavbar({
     onToggleLeftSidebar,
     onOpenModeSelector,
 }: DashboardNavbarProps) {
-    const [mounted, setMounted] = useState(false);
-
-    useEffect(() => {
-        setMounted(true);
-    }, []);
-
     return (
         <motion.nav
-            className="shrink-0 h-14 border-b border-white/10 bg-zinc-950/80 backdrop-blur-xl flex items-center justify-between px-6 z-50"
+            className="shrink-0 h-14 border-b border-white/10 bg-zinc-950/80 backdrop-blur-xl flex items-center justify-between px-3 sm:px-6 z-50"
             initial={{ y: -20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.4, ease: "easeOut" }}
@@ -63,7 +56,7 @@ export default function DashboardNavbar({
                         {/* Subtle glow effect */}
                         <div className="absolute inset-0 rounded-lg bg-blue-500/20 blur-md opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
-                    <span className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400">
+                    <span className="hidden text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400 sm:inline">
                         CogniGraph
                     </span>
                     <span className="text-[10px] text-zinc-600 font-mono">BETA</span>
@@ -88,7 +81,6 @@ export default function DashboardNavbar({
                 <WorkspaceBadge onOpen={onOpenModeSelector} />
 
                 {/* User Button - only render after mount to prevent hydration mismatch */}
-                {mounted && (
                     <UserButton
                         appearance={{
                             elements: {
@@ -96,7 +88,6 @@ export default function DashboardNavbar({
                             }
                         }}
                     />
-                )}
             </div>
         </motion.nav>
     );

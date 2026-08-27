@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { Network, MessageSquare, Columns } from 'lucide-react';
 
 interface StackedViewProps {
@@ -20,12 +19,6 @@ const panels = [
 ];
 
 export default function StackedView({ activeView, onViewChange, children }: StackedViewProps) {
-    const [mounted, setMounted] = useState(false);
-
-    useEffect(() => {
-        setMounted(true);
-    }, []);
-
     // Calculate z-index based on active view
     const getZIndex = (panelId: string) => {
         if (panelId === activeView) return 30;
@@ -57,13 +50,6 @@ export default function StackedView({ activeView, onViewChange, children }: Stac
             opacity: 0.7,
         };
     };
-
-    // Show loading state until mounted to prevent hydration mismatch
-    if (!mounted) {
-        return (
-            <div className="flex-1 h-full min-h-0 flex flex-col min-w-0 relative bg-zinc-900 rounded-lg" />
-        );
-    }
 
     return (
         <div className="flex-1 h-full min-h-0 flex flex-col min-w-0 relative">

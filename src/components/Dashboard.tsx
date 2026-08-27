@@ -63,10 +63,6 @@ function DashboardContent({ initialMode }: DashboardProps) {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
-    // Calculate visibility for each view based on activeView
-    const showGraph = activeView === 'graph' || activeView === 'split';
-    const showChat = activeView === 'chat' || activeView === 'split';
-
     return (
         <ModeProvider initialMode={initialMode}>
             <div className="flex flex-col h-screen bg-black text-zinc-100 overflow-hidden selection:bg-indigo-500/30 font-sans">
@@ -85,20 +81,20 @@ function DashboardContent({ initialMode }: DashboardProps) {
                 <DashboardBackground />
 
                 {/* --- 2. MAIN LAYOUT GRID --- */}
-                <main className="flex-1 p-4 lg:p-6 min-h-0 overflow-hidden flex gap-4 relative z-10">
+                <main className="flex-1 p-2 sm:p-4 lg:p-6 min-h-0 overflow-hidden flex gap-4 relative z-10">
 
                     {/* LEFT: Data Sources - Sliding Wipe Animation */}
                     <div
-                        className="h-full shrink-0 overflow-hidden"
+                        className={`fixed inset-x-2 bottom-2 top-16 z-40 h-auto overflow-hidden sm:static sm:h-full sm:shrink-0 ${leftSidebarOpen ? '' : 'pointer-events-none'}`}
                         style={{
-                            width: leftSidebarOpen ? 320 : 0,
+                            width: leftSidebarOpen ? 'min(320px, calc(100vw - 1rem))' : 0,
                             transition: 'width 300ms cubic-bezier(0.25, 1, 0.5, 1)', // Smooth easeOutQuint-ish
                             contain: 'strict', // ISOLATE LAYOUT: Critical validation for perfs
                             willChange: 'width',
                         }}
                     >
                         <aside
-                            className="flex flex-col gap-4 h-full min-h-0 w-80"
+                            className="flex flex-col gap-4 h-full min-h-0 w-80 max-w-full rounded-xl bg-black/95 sm:bg-transparent"
                             style={{
                                 transform: leftSidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
                                 transition: 'transform 300ms cubic-bezier(0.25, 1, 0.5, 1)',
@@ -134,7 +130,7 @@ function DashboardContent({ initialMode }: DashboardProps) {
                             {{
                                 chat: <ChatInterface />,
                                 split: (
-                                    <div className="h-full grid grid-cols-2 gap-2 p-2">
+                                    <div className="h-full grid grid-cols-1 xl:grid-cols-2 gap-2 p-2">
                                         <div className="h-full overflow-hidden rounded-lg">
                                             <GraphVisualization />
                                         </div>

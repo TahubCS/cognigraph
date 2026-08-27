@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
 interface Node {
@@ -10,16 +9,14 @@ interface Node {
 }
 
 export default function DashboardBackground() {
-    const [nodes, setNodes] = useState<Node[]>([]);
-
-    useEffect(() => {
-        // Create fewer nodes for performance (dashboard runs alongside graph viz)
-        setNodes(Array.from({ length: 12 }).map((_, i) => ({
-            id: i,
-            x: Math.random() * 100,
-            y: Math.random() * 100,
-        })));
-    }, []);
+    const nodes: Node[] = [
+        { id: 0, x: 8, y: 18 }, { id: 1, x: 21, y: 43 },
+        { id: 2, x: 37, y: 12 }, { id: 3, x: 48, y: 62 },
+        { id: 4, x: 61, y: 31 }, { id: 5, x: 74, y: 75 },
+        { id: 6, x: 91, y: 22 }, { id: 7, x: 14, y: 82 },
+        { id: 8, x: 34, y: 89 }, { id: 9, x: 57, y: 9 },
+        { id: 10, x: 79, y: 47 }, { id: 11, x: 94, y: 88 },
+    ];
 
     return (
         <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
@@ -47,9 +44,9 @@ export default function DashboardBackground() {
                                 initial={{ opacity: 0 }}
                                 animate={{ opacity: [0.1, 0.4, 0.1] }}
                                 transition={{
-                                    duration: 4 + Math.random() * 3,
+                                    duration: 4 + ((i + j) % 4) * 0.6,
                                     repeat: Infinity,
-                                    delay: Math.random() * 2
+                                    delay: ((i * 2 + j) % 5) * 0.3
                                 }}
                             />
                         );
@@ -80,9 +77,9 @@ export default function DashboardBackground() {
                         opacity: [0.3, 0.7, 0.3],
                     }}
                     transition={{
-                        duration: 3 + Math.random() * 2,
+                        duration: 3 + (node.id % 4) * 0.5,
                         repeat: Infinity,
-                        delay: Math.random() * 2,
+                        delay: (node.id % 3) * 0.4,
                     }}
                 />
             ))}
